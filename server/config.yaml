@@ -1,0 +1,45 @@
+server:
+  upload_dir: ./data/uploads
+  cors_origins:
+    - http://localhost:5173
+
+db:
+  url: sqlite:///./data/ragkit.db
+
+vectorstore:
+  kind: qdrant
+  url: http://localhost:6333
+  collection: documents
+  vector_size: 768
+  distance: Cosine
+
+embeddings:
+  provider: ollama
+  ollama:
+    base_url: http://localhost:11434
+    model: nomic-embed-text
+  tei:
+    base_url: http://localhost:8080
+  vllm:
+    base_url: http://localhost:8000/v1
+    model: intfloat/e5-large-v2
+  azure_openai:
+    endpoint: ""
+    deployment: ""
+    api_version: "2024-02-01"
+
+jwt:
+  algorithm: HS256
+  access_token_ttl_minutes: 60
+
+ingest:
+  chunk_size: 1000
+  chunk_overlap: 150
+
+search:
+  default_top_k: 5
+  max_top_k: 50
+
+admin_bootstrap:
+  email: admin@example.com
+  password_env: INITIAL_ADMIN_PASSWORD
