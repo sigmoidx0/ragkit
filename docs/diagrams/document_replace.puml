@@ -1,0 +1,50 @@
+@startuml Document Replace
+
+title POST /documents/{id}/replace — 문서 교체
+
+actor Client
+participant "FastAPI\n(documents.py)" as API
+participant "FileStorage\n(local.py)" as FS
+participant "indexing.py" as IDX
+participant "QdrantStore" as QD
+database "SQLite/PG\n(DB)" as DB
+
+Client -> API : POST /documents/{id}/replace\n(file)
+activate API
+
+API -> DB : GET Document by id
+DB --> API : document
+
+API -> IDX : clear_document_index(document)
+activate IDX
+IDX -> QD : delete_document(document_id)\n[payload filter]
+QD --> IDX : ok
+deactivate IDX
+
+API -> FS : delete_document_dir(document_id)
+note right of FS #pink
+  ⚠ 여기서 실패하면 구 벡터는 삭제됐으나
+  구 파일은 남는 불일치 발생 가능
+end note
+
+API -> FS : save_document_file(document_id, new_file)
+FS --> API : StoredFile
+
+API -> DB : flush (source_filename, mime_type,\nfile_path, size_bytes, sha256,\nstatus=pending, error=None)
+
+API -> IDX : index_document(db, document)
+activate IDX
+note right of IDX
+  ingest → embed → Qdrant upsert
+  (동기 실행)
+end note
+IDX --> API : (status=ready or failed)
+deactivate IDX
+
+API -> DB : COMMIT
+
+API --> Client : 200 DocumentOut
+
+deactivate API
+
+@enduml

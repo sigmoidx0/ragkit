@@ -1,0 +1,60 @@
+@startuml Search
+
+title POST /search — 의미 기반 벡터 검색 (LCEL)
+
+actor Client
+participant "FastAPI\n(search.py)" as API
+participant "chain.py\n(LCEL)" as CHAIN
+participant "Embedder" as EMB
+participant "QdrantStore" as QD
+database "SQLite/PG\n(DB)" as DB
+
+Client -> API : POST /search\n{query, top_k?, document_id?}
+note right of API
+  인증: JWT Bearer 또는
+  X-Service-Token (MCP용)
+end note
+activate API
+
+API -> CHAIN : run_search(db, SearchQuery)
+activate CHAIN
+
+note over CHAIN
+  **LCEL 파이프라인**
+  RunnableParallel(query=passthrough, vector=embed)
+    | search
+    | enrich
+end note
+
+CHAIN -> EMB : embed_query(query.query)
+activate EMB
+EMB --> CHAIN : vector[float]
+deactivate EMB
+
+CHAIN -> QD : search(vector, top_k, document_id?)
+activate QD
+note right of QD
+  document_id 있으면
+  payload filter 적용
+  (Qdrant payload index 활용)
+end note
+QD --> CHAIN : list[SearchHit]\n(point_id, score, payload)
+deactivate QD
+
+CHAIN -> DB : SELECT Document WHERE id IN (doc_ids)
+activate DB
+note right of DB
+  N+1 방지: 한 번의 IN 쿼리로
+  모든 document title 조회
+end note
+DB --> CHAIN : list[Document]
+deactivate DB
+
+CHAIN --> API : list[EnrichedHit]\n(document_id, document_title,\nordinal, score, text, metadata)
+deactivate CHAIN
+
+API --> Client : 200 SearchResponse\n{query, hits[]}
+
+deactivate API
+
+@enduml

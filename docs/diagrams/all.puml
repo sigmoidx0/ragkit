@@ -1,0 +1,187 @@
+@startuml Document Create
+
+title POST /documents — 문서 업로드 & 인덱싱
+
+actor Client
+participant "FastAPI\n(documents.py)" as API
+participant "FileStorage\n(local.py)" as FS
+participant "indexing.py" as IDX
+participant "pipeline.py\n(ingest)" as ING
+participant "Embedder" as EMB
+participant "QdrantStore" as QD
+database "SQLite/PG\n(DB)" as DB
+
+Client -> API : POST /documents\n(file, title, description)
+activate API
+
+API -> DB : INSERT Document\n(status=pending, file_path="")
+activate DB
+DB --> API : document.id
+deactivate DB
+
+API -> FS : save_document_file(document_id, file)
+activate FS
+FS --> API : StoredFile(relative_path, size_bytes, sha256)
+deactivate FS
+
+API -> DB : flush (file_path, size_bytes, sha256 업데이트)
+
+API -> IDX : index_document(db, document)
+activate IDX
+
+IDX -> ING : ingest_file(abs_path)
+activate ING
+ING --> IDX : list[ChunkRecord]
+deactivate ING
+
+IDX -> EMB : embed_documents(texts)
+activate EMB
+EMB --> IDX : list[vector]
+deactivate EMB
+
+IDX -> QD : upsert(point_ids, vectors, payloads)
+activate QD
+QD --> IDX : ok
+deactivate QD
+
+IDX -> DB : flush (status=ready)
+
+alt 인덱싱 중 예외 발생
+  IDX -> QD : delete_points(inserted_point_ids)
+  IDX -> DB : flush (status=failed, error=msg)
+end
+
+deactivate IDX
+
+API -> DB : COMMIT
+DB --> API : ok
+
+API --> Client : 201 DocumentOut
+
+deactivate API
+
+@enduml
+
+newpage
+
+@startuml Document Replace
+
+title POST /documents/{id}/replace — 문서 교체
+
+actor Client
+participant "FastAPI\n(documents.py)" as API
+participant "FileStorage\n(local.py)" as FS
+participant "indexing.py" as IDX
+participant "QdrantStore" as QD
+database "SQLite/PG\n(DB)" as DB
+
+Client -> API : POST /documents/{id}/replace\n(file)
+activate API
+
+API -> DB : GET Document by id
+DB --> API : document
+
+API -> IDX : clear_document_index(document)
+activate IDX
+IDX -> QD : delete_document(document_id)
+QD --> IDX : ok
+deactivate IDX
+
+API -> FS : delete_document_dir(document_id)
+
+API -> FS : save_document_file(document_id, new_file)
+FS --> API : StoredFile
+
+API -> DB : flush (source_filename, mime_type, file_path,\nsize_bytes, sha256, status=pending, error=None)
+
+API -> IDX : index_document(db, document)
+activate IDX
+IDX --> API : (status=ready or failed)
+deactivate IDX
+
+API -> DB : COMMIT
+
+API --> Client : 200 DocumentOut
+
+deactivate API
+
+@enduml
+
+newpage
+
+@startuml Document Delete
+
+title DELETE /documents/{id} — 문서 삭제
+
+actor Client
+participant "FastAPI\n(documents.py)" as API
+participant "indexing.py" as IDX
+participant "FileStorage\n(local.py)" as FS
+participant "QdrantStore" as QD
+database "SQLite/PG\n(DB)" as DB
+
+Client -> API : DELETE /documents/{id}
+activate API
+
+API -> DB : GET Document by id
+DB --> API : document
+
+API -> IDX : delete_document(document)
+activate IDX
+IDX -> QD : delete_document(document_id)
+QD --> IDX : ok
+IDX -> FS : delete_document_dir(document_id)
+FS --> IDX : ok
+deactivate IDX
+
+API -> DB : db.delete(document)
+API -> DB : COMMIT
+
+API --> Client : 204 No Content
+
+deactivate API
+
+@enduml
+
+newpage
+
+@startuml Search
+
+title POST /search — 의미 기반 벡터 검색 (LCEL)
+
+actor Client
+participant "FastAPI\n(search.py)" as API
+participant "chain.py\n(LCEL)" as CHAIN
+participant "Embedder" as EMB
+participant "QdrantStore" as QD
+database "SQLite/PG\n(DB)" as DB
+
+Client -> API : POST /search\n{query, top_k?, document_id?}
+activate API
+
+API -> CHAIN : run_search(db, SearchQuery)
+activate CHAIN
+
+CHAIN -> EMB : embed_query(query)
+activate EMB
+EMB --> CHAIN : vector[float]
+deactivate EMB
+
+CHAIN -> QD : search(vector, top_k, document_id?)
+activate QD
+QD --> CHAIN : list[SearchHit]
+deactivate QD
+
+CHAIN -> DB : SELECT Document WHERE id IN (doc_ids)
+activate DB
+DB --> CHAIN : list[Document]
+deactivate DB
+
+CHAIN --> API : list[EnrichedHit]
+deactivate CHAIN
+
+API --> Client : 200 SearchResponse
+
+deactivate API
+
+@enduml

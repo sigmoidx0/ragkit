@@ -1,0 +1,50 @@
+@startuml Document Delete
+
+title DELETE /documents/{id} — 문서 삭제
+
+actor Client
+participant "FastAPI\n(documents.py)" as API
+participant "indexing.py" as IDX
+participant "FileStorage\n(local.py)" as FS
+participant "QdrantStore" as QD
+database "SQLite/PG\n(DB)" as DB
+
+Client -> API : DELETE /documents/{id}
+activate API
+
+API -> DB : GET Document by id
+DB --> API : document
+
+API -> IDX : delete_document(document)
+activate IDX
+
+IDX -> QD : delete_document(document_id)\n[payload filter]
+activate QD
+QD --> IDX : ok
+deactivate QD
+
+IDX -> FS : delete_document_dir(document_id)
+activate FS
+note right of FS
+  shutil.rmtree (ignore_errors=True)
+  documents/{id}/ 폴더 전체 삭제
+end note
+FS --> IDX : ok
+deactivate FS
+
+deactivate IDX
+
+API -> DB : db.delete(document)
+note right of DB
+  ON DELETE CASCADE로
+  Chunk rows도 삭제
+  (현재 Chunk 모델은 RDB에 없음)
+end note
+
+API -> DB : COMMIT
+
+API --> Client : 204 No Content
+
+deactivate API
+
+@enduml
