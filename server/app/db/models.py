@@ -12,7 +12,9 @@ from app.db.base import Base, TimestampMixin
 
 class DocumentStatus(str, enum.Enum):
     pending = "pending"
-    ready = "ready"
+    chunking = "chunking"
+    embedding = "embedding"
+    indexed = "indexed"
     failed = "failed"
 
 

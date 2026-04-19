@@ -4,9 +4,11 @@ title POST /documents — 문서 업로드 & 인덱싱
 
 actor Client
 participant "FastAPI\n(documents.py)" as API
+participant "services/\ndocuments.py" as SVC
 participant "FileStorage\n(local.py)" as FS
+participant "loaders.py\n(ingest)" as LDR
 participant "indexing.py" as IDX
-participant "pipeline.py\n(ingest)" as ING
+participant "chunking.py\n(ingest)" as ING
 participant "Embedder" as EMB
 participant "QdrantStore" as QD
 database "SQLite/PG\n(DB)" as DB
@@ -19,29 +21,48 @@ activate DB
 DB --> API : document.id
 deactivate DB
 
-API -> FS : save_document_file(document_id, file)
+API -> SVC : save_document_file(document, file)
+activate SVC
+SVC -> FS : save_document_file(document_id, file)
 activate FS
 note right of FS
   SHA-256 계산
   documents/{id}/{safe_filename} 저장
 end note
-FS --> API : StoredFile(relative_path, size_bytes, sha256)
+FS --> SVC : StoredFile(stored_path, size_bytes, sha256)
 deactivate FS
+note right of SVC
+  document 필드 업데이트
+  (source_filename, mime_type,
+   file_path, size_bytes, sha256)
+end note
+deactivate SVC
 
-API -> DB : flush (file_path, size_bytes, sha256 업데이트)
+API -> DB : flush
 
-API -> IDX : index_document(db, document)
-activate IDX
-
-IDX -> ING : ingest_file(abs_path)
-activate ING
-note right of ING
+API -> LDR : convert_to_documents(abs_path)
+activate LDR
+note right of LDR
   확장자 기반 로더 선택
   (PDF→PyMuPDF, Office→Unstructured, txt→plain)
-  RecursiveCharacterTextSplitter
+end note
+LDR --> API : list[Document]
+deactivate LDR
+
+API -> IDX : index_document(db, document, docs)
+activate IDX
+
+IDX -> DB : flush (status=chunking)
+
+IDX -> ING : strategy.split(docs)
+activate ING
+note right of ING
+  RecursiveChunkStrategy
 end note
 ING --> IDX : list[ChunkRecord]
 deactivate ING
+
+IDX -> DB : flush (status=embedding)
 
 IDX -> EMB : embed_documents(texts)
 activate EMB
@@ -57,7 +78,7 @@ end note
 QD --> IDX : ok
 deactivate QD
 
-IDX -> DB : flush (status=ready)
+IDX -> DB : flush (status=indexed)
 
 alt 인덱싱 중 예외 발생
   IDX -> QD : delete_points(inserted_point_ids)

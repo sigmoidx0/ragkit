@@ -12,11 +12,14 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import CurrentUser, DbDep
 from app.db.models import Document, DocumentStatus
-from app.ingest.loaders import guess_mime_type
+from app.ingest.loaders import guess_mime_type, convert_to_documents
 from app.mappers.document_mapper import to_document_list_response, to_document_out
 from app.schemas.documents import DocumentListResponse, DocumentOut
-from app.services.indexing import clear_document_index, delete_document, index_document
+from app.services.documents import delete_document, delete_document_dir, save_document_file
+from app.services.indexing import index_document
+from app.services.indexing import clear_document_index
 from app.storage import get_storage
+from app.storage.local import LocalStorage
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -69,12 +72,11 @@ def create_document(
     if not file.filename:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "file is required")
 
-    mime = file.content_type or guess_mime_type(file.filename)
     document = Document(
         title=title,
         description=description,
         source_filename=file.filename,
-        mime_type=mime,
+        mime_type=file.content_type or guess_mime_type(file.filename),
         file_path="",
         size_bytes=0,
         sha256="",
@@ -83,17 +85,12 @@ def create_document(
     db.add(document)
     db.flush()
 
-    storage = get_storage()
-    stored = storage.save_document_file(
-        document_id=document.id,
-        original_filename=file.filename,
-        source=file.file,
-    )
-    document.file_path = stored.relative_path
-    document.size_bytes = stored.size_bytes
-    document.sha256 = stored.sha256
-    index_document(db, document)
+    save_document_file(document, file.file, file.filename, file.content_type)
     db.flush()
+
+    with get_storage().as_local_path(document.file_path) as path:
+        docs = convert_to_documents(path)
+    index_document(db, document, docs)
     return to_document_out(document)
 
 
@@ -118,24 +115,17 @@ def replace_document(
     if not file.filename:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "file is required")
 
-    storage = get_storage()
     clear_document_index(document)
-    storage.delete_document_dir(document_id)
+    delete_document_dir(document_id)
 
-    stored = storage.save_document_file(
-        document_id=document.id,
-        original_filename=file.filename,
-        source=file.file,
-    )
-    document.source_filename = file.filename
-    document.mime_type = file.content_type or guess_mime_type(file.filename)
-    document.file_path = stored.relative_path
-    document.size_bytes = stored.size_bytes
-    document.sha256 = stored.sha256
+    save_document_file(document, file.file, file.filename, file.content_type)
     document.status = DocumentStatus.pending
     document.error = None
-    index_document(db, document)
     db.flush()
+
+    with get_storage().as_local_path(document.file_path) as path:
+        docs = convert_to_documents(path)
+    index_document(db, document, docs)
     return to_document_out(document)
 
 
@@ -158,6 +148,10 @@ def download_file(document_id: int, db: DbDep, _user: CurrentUser) -> FileRespon
     if not document:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "document not found")
     storage = get_storage()
+    # FileResponse requires a local path. S3 backends should override this
+    # endpoint to return a RedirectResponse with a presigned URL instead.
+    if not isinstance(storage, LocalStorage):
+        raise HTTPException(status.HTTP_501_NOT_IMPLEMENTED, "file download not supported for this storage backend")
     try:
         abs_path = storage.absolute(document.file_path)
     except ValueError as e:

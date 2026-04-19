@@ -4,9 +4,11 @@ title POST /documents — 문서 업로드 & 인덱싱
 
 actor Client
 participant "FastAPI\n(documents.py)" as API
+participant "services/\ndocuments.py" as SVC
 participant "FileStorage\n(local.py)" as FS
+participant "loaders.py\n(ingest)" as LDR
 participant "indexing.py" as IDX
-participant "pipeline.py\n(ingest)" as ING
+participant "chunking.py\n(ingest)" as ING
 participant "Embedder" as EMB
 participant "QdrantStore" as QD
 database "SQLite/PG\n(DB)" as DB
@@ -19,20 +21,32 @@ activate DB
 DB --> API : document.id
 deactivate DB
 
-API -> FS : save_document_file(document_id, file)
+API -> SVC : save_document_file(document, file)
+activate SVC
+SVC -> FS : save_document_file(document_id, file)
 activate FS
-FS --> API : StoredFile(relative_path, size_bytes, sha256)
+FS --> SVC : StoredFile(stored_path, size_bytes, sha256)
 deactivate FS
+deactivate SVC
 
-API -> DB : flush (file_path, size_bytes, sha256 업데이트)
+API -> DB : flush
 
-API -> IDX : index_document(db, document)
+API -> LDR : convert_to_documents(abs_path)
+activate LDR
+LDR --> API : list[Document]
+deactivate LDR
+
+API -> IDX : index_document(db, document, docs)
 activate IDX
 
-IDX -> ING : ingest_file(abs_path)
+IDX -> DB : flush (status=chunking)
+
+IDX -> ING : strategy.split(docs)
 activate ING
 ING --> IDX : list[ChunkRecord]
 deactivate ING
+
+IDX -> DB : flush (status=embedding)
 
 IDX -> EMB : embed_documents(texts)
 activate EMB
@@ -44,7 +58,7 @@ activate QD
 QD --> IDX : ok
 deactivate QD
 
-IDX -> DB : flush (status=ready)
+IDX -> DB : flush (status=indexed)
 
 alt 인덱싱 중 예외 발생
   IDX -> QD : delete_points(inserted_point_ids)
@@ -70,7 +84,9 @@ title POST /documents/{id}/replace — 문서 교체
 
 actor Client
 participant "FastAPI\n(documents.py)" as API
+participant "services/\ndocuments.py" as SVC
 participant "FileStorage\n(local.py)" as FS
+participant "loaders.py\n(ingest)" as LDR
 participant "indexing.py" as IDX
 participant "QdrantStore" as QD
 database "SQLite/PG\n(DB)" as DB
@@ -87,16 +103,32 @@ IDX -> QD : delete_document(document_id)
 QD --> IDX : ok
 deactivate IDX
 
-API -> FS : delete_document_dir(document_id)
+API -> SVC : delete_document_dir(document_id)
+activate SVC
+SVC -> FS : delete_document_dir(document_id)
+note right of FS #pink
+  ⚠ 여기서 실패하면 구 벡터는 삭제됐으나
+  구 파일은 남는 불일치 발생 가능
+end note
+FS --> SVC : ok
+deactivate SVC
 
-API -> FS : save_document_file(document_id, new_file)
-FS --> API : StoredFile
+API -> SVC : save_document_file(document, new_file)
+activate SVC
+SVC -> FS : save_document_file(document_id, new_file)
+FS --> SVC : StoredFile
+deactivate SVC
 
-API -> DB : flush (source_filename, mime_type, file_path,\nsize_bytes, sha256, status=pending, error=None)
+API -> DB : flush (status=pending, error=None)
 
-API -> IDX : index_document(db, document)
+API -> LDR : convert_to_documents(abs_path)
+activate LDR
+LDR --> API : list[Document]
+deactivate LDR
+
+API -> IDX : index_document(db, document, docs)
 activate IDX
-IDX --> API : (status=ready or failed)
+IDX --> API : (status=indexed or failed)
 deactivate IDX
 
 API -> DB : COMMIT
@@ -115,6 +147,7 @@ title DELETE /documents/{id} — 문서 삭제
 
 actor Client
 participant "FastAPI\n(documents.py)" as API
+participant "services/\ndocuments.py" as SVC
 participant "indexing.py" as IDX
 participant "FileStorage\n(local.py)" as FS
 participant "QdrantStore" as QD
@@ -126,13 +159,16 @@ activate API
 API -> DB : GET Document by id
 DB --> API : document
 
-API -> IDX : delete_document(document)
+API -> SVC : delete_document(document)
+activate SVC
+SVC -> IDX : clear_document_index(document)
 activate IDX
 IDX -> QD : delete_document(document_id)
 QD --> IDX : ok
-IDX -> FS : delete_document_dir(document_id)
-FS --> IDX : ok
 deactivate IDX
+SVC -> FS : delete_document_dir(document_id)
+FS --> SVC : ok
+deactivate SVC
 
 API -> DB : db.delete(document)
 API -> DB : COMMIT

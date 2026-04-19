@@ -28,5 +28,7 @@ data/
 .vscode/
 .DS_Store
 .cursor/
+CLAUDE.md
+.claude/
 
 TODO.md

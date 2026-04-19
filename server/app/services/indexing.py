@@ -1,36 +1,36 @@
-"""Index one document file into Qdrant (no chunk rows in RDB)."""
+"""Chunk, embed, and upsert a document into Qdrant."""
 
 from __future__ import annotations
 
 import logging
 import uuid
-from pathlib import Path
 
 from sqlalchemy.orm import Session
 
 from app.db.models import Document, DocumentStatus
 from app.embeddings import get_embedder
-from app.ingest import ingest_file
-from app.storage import get_storage
+from app.ingest import default_chunk_strategy
 from app.vectorstore import get_vectorstore
 
 logger = logging.getLogger(__name__)
 
 
-def index_document(db: Session, document: Document) -> None:
-    """Run ingest + embedding + Qdrant upsert and update document status."""
-    storage = get_storage()
+def index_document(db: Session, document: Document, docs: list) -> None:
+    """Chunk, embed, upsert to Qdrant and update document status."""
     vs = get_vectorstore()
     embedder = get_embedder()
     vs.ensure_collection()
 
-    abs_path: Path = storage.absolute(document.file_path)
     inserted_point_ids: list[str] = []
     try:
-        chunks = ingest_file(abs_path)
+        document.status = DocumentStatus.chunking
+        db.flush()
+        chunks = default_chunk_strategy().split(docs)
         if not chunks:
             raise RuntimeError("no text extracted from file")
 
+        document.status = DocumentStatus.embedding
+        db.flush()
         texts = [c.text for c in chunks]
         vectors = embedder.embed_documents(texts)
         if len(vectors) != len(texts):
@@ -49,10 +49,10 @@ def index_document(db: Session, document: Document) -> None:
 
         vs.upsert(point_ids=point_ids, vectors=vectors, payloads=payloads)
         inserted_point_ids = point_ids
-        document.status = DocumentStatus.ready
+        document.status = DocumentStatus.indexed
         document.error = None
     except Exception as e:
-        logger.exception("indexing failed for document %s", document.id)
+        logger.exception("indexing failed for document %s at stage %s", document.id, document.status)
         if inserted_point_ids:
             try:
                 vs.delete_points(inserted_point_ids)
@@ -70,8 +70,3 @@ def clear_document_index(document: Document) -> None:
         vs.delete_document(document.id)
     except Exception:
         logger.exception("qdrant delete failed for document %s", document.id)
-
-
-def delete_document(document: Document) -> None:
-    clear_document_index(document)
-    get_storage().delete_document_dir(document.id)

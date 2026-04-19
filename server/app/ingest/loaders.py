@@ -16,15 +16,17 @@ _TEXT_EXT = {".txt", ".md", ".markdown", ".rst", ".log"}
 
 
 def _load_pdf(path: Path) -> list[Document]:
-    from langchain_community.document_loaders import PyMuPDFLoader
+    import pymupdf4llm
 
-    return PyMuPDFLoader(str(path)).load()
+    md = pymupdf4llm.to_markdown(str(path))
+    return [Document(page_content=md, metadata={"source": str(path)})]
 
 
 def _load_office(path: Path) -> list[Document]:
-    from langchain_community.document_loaders import UnstructuredFileLoader
+    from markitdown import MarkItDown
 
-    return UnstructuredFileLoader(str(path), mode="elements").load()
+    md = MarkItDown().convert(str(path)).text_content
+    return [Document(page_content=md, metadata={"source": str(path)})]
 
 
 def _load_text(path: Path) -> list[Document]:
@@ -32,7 +34,7 @@ def _load_text(path: Path) -> list[Document]:
     return [Document(page_content=text, metadata={"source": str(path)})]
 
 
-def load_file(path: Path) -> list[Document]:
+def convert_to_documents(path: Path) -> list[Document]:
     ext = path.suffix.lower()
     if ext in _PDF_EXT:
         return _load_pdf(path)

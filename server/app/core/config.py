@@ -16,8 +16,12 @@ from dotenv import dotenv_values
 from pydantic import BaseModel, Field
 
 
-class ServerSection(BaseModel):
+class StorageSection(BaseModel):
+    kind: Literal["local"] = "local"
     upload_dir: str = "./data/uploads"
+
+
+class ServerSection(BaseModel):
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
 
 
@@ -86,6 +90,7 @@ class AdminBootstrapSection(BaseModel):
 
 class Settings(BaseModel):
     server: ServerSection = Field(default_factory=ServerSection)
+    storage: StorageSection = Field(default_factory=StorageSection)
     db: DbSection = Field(default_factory=DbSection)
     vectorstore: VectorstoreSection = Field(default_factory=VectorstoreSection)
     embeddings: EmbeddingsSection = Field(default_factory=EmbeddingsSection)
