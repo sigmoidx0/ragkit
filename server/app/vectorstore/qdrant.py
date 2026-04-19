@@ -106,16 +106,16 @@ class QdrantStore:
                     )
                 ]
             )
-        results = self._client.search(
+        results = self._client.query_points(
             collection_name=self._collection,
-            query_vector=vector,
+            query=vector,
             query_filter=flt,
             limit=top_k,
             with_payload=True,
         )
         return [
             SearchHit(point_id=str(r.id), score=float(r.score), payload=r.payload or {})
-            for r in results
+            for r in results.points
         ]
 
 

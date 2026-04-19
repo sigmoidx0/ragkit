@@ -25,7 +25,7 @@ def save_document_file(
     )
     document.source_filename = filename
     document.mime_type = content_type or guess_mime_type(filename)
-    document.file_path = stored.relative_path
+    document.file_path = stored.stored_path
     document.size_bytes = stored.size_bytes
     document.sha256 = stored.sha256
 
