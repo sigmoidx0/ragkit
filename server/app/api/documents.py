@@ -90,7 +90,11 @@ def create_document(
 
     with get_storage().as_local_path(document.file_path) as path:
         docs = convert_to_documents(path)
-    index_document(db, document, docs)
+    try:
+        index_document(db, document, docs)
+    except Exception as e:
+        delete_document_dir(document.id)
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, f"indexing failed: {e}") from e
     return to_document_out(document)
 
 

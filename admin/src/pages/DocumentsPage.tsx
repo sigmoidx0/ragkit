@@ -1,16 +1,9 @@
 import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { DocumentsApi } from "@/api/endpoints";
-import {
-  Badge,
-  Button,
-  Card,
-  ErrorBox,
-  Input,
-  Label,
-  Textarea,
-} from "@/components/ui";
+import { Badge, Button, Card, Input, Label, Textarea } from "@/components/ui";
 import type { DocumentStatus } from "@/api/types";
 
 function statusTone(s: DocumentStatus): "green" | "amber" | "red" {
@@ -31,7 +24,6 @@ export default function DocumentsPage() {
   });
 
   const [uploading, setUploading] = useState(false);
-  const [error, setError] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -43,18 +35,18 @@ export default function DocumentsPage() {
       setFile(null);
       setTitle("");
       setDescription("");
+      toast.success("Document uploaded successfully");
     },
   });
 
   const onUpload = async (e: FormEvent) => {
     e.preventDefault();
-    setError("");
     if (!file) {
-      setError("Please choose a file");
+      toast.error("Please choose a file");
       return;
     }
     if (!title.trim()) {
-      setError("Title is required");
+      toast.error("Title is required");
       return;
     }
     setUploading(true);
@@ -65,7 +57,7 @@ export default function DocumentsPage() {
       if (description) fd.set("description", description);
       await createDoc.mutateAsync(fd);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "upload failed");
+      toast.error(err instanceof Error ? err.message : "Upload failed");
     } finally {
       setUploading(false);
     }
@@ -113,11 +105,6 @@ export default function DocumentsPage() {
               rows={2}
             />
           </div>
-          {error && (
-            <div className="md:col-span-2">
-              <ErrorBox message={error} />
-            </div>
-          )}
           <div className="md:col-span-2">
             <Button type="submit" disabled={uploading}>
               {uploading ? "Uploading…" : "Upload"}

@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import uuid
 
+import httpx
 from sqlalchemy.orm import Session
 
 from app.db.models import Document, DocumentStatus
@@ -13,6 +14,14 @@ from app.ingest import default_chunk_strategy
 from app.vectorstore import get_vectorstore
 
 logger = logging.getLogger(__name__)
+
+
+def _friendly_error(stage: DocumentStatus, exc: BaseException) -> str:
+    if isinstance(exc, httpx.ConnectError):
+        if stage == DocumentStatus.embedding:
+            return "Embedding service (Ollama) is not reachable. Make sure Ollama is running."
+        return "Vector store (Qdrant) is not reachable."
+    return str(exc)
 
 
 def index_document(db: Session, document: Document, docs: list) -> None:
@@ -58,8 +67,7 @@ def index_document(db: Session, document: Document, docs: list) -> None:
                 vs.delete_points(inserted_point_ids)
             except Exception:
                 logger.exception("qdrant cleanup failed for document %s", document.id)
-        document.status = DocumentStatus.failed
-        document.error = str(e)[:1000]
+        raise RuntimeError(_friendly_error(document.status, e)) from e
 
     db.flush()
 

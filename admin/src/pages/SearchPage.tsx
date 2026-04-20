@@ -1,8 +1,9 @@
 import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { useMutation } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { SearchApi } from "@/api/endpoints";
-import { Button, Card, ErrorBox, Input, Label } from "@/components/ui";
+import { Button, Card, Input, Label } from "@/components/ui";
 import type { SearchResponse } from "@/api/types";
 
 export default function SearchPage() {
@@ -10,7 +11,6 @@ export default function SearchPage() {
   const [topK, setTopK] = useState(5);
   const [docId, setDocId] = useState("");
   const [result, setResult] = useState<SearchResponse | null>(null);
-  const [error, setError] = useState("");
 
   const run = useMutation({
     mutationFn: () =>
@@ -20,12 +20,11 @@ export default function SearchPage() {
         document_id: docId.trim() ? Number(docId) : undefined,
       }),
     onSuccess: (r) => setResult(r),
-    onError: (e) => setError(e instanceof Error ? e.message : "search failed"),
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Search failed"),
   });
 
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
-    setError("");
     setResult(null);
     run.mutate();
   };
@@ -72,11 +71,6 @@ export default function SearchPage() {
             </Button>
           </div>
         </form>
-        {error && (
-          <div className="mt-4">
-            <ErrorBox message={error} />
-          </div>
-        )}
       </Card>
 
       {result && (

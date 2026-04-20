@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes } from "react-router-dom";
+import { Toaster } from "sonner";
 import Layout from "./components/Layout";
 import { RequireAuth } from "./auth/guards";
 import LoginPage from "./pages/LoginPage";
@@ -8,6 +9,8 @@ import SearchPage from "./pages/SearchPage";
 
 export default function App() {
   return (
+    <>
+    <Toaster richColors position="top-right" />
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route
@@ -24,5 +27,6 @@ export default function App() {
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </>
   );
 }

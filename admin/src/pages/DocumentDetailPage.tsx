@@ -1,16 +1,9 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { DocumentsApi } from "@/api/endpoints";
-import {
-  Badge,
-  Button,
-  Card,
-  ErrorBox,
-  Input,
-  Label,
-  formatBytes,
-} from "@/components/ui";
+import { Badge, Button, Card, Input, Label, formatBytes } from "@/components/ui";
 import type { DocumentStatus } from "@/api/types";
 
 function statusTone(s: DocumentStatus): "green" | "amber" | "red" {
@@ -34,18 +27,20 @@ export default function DocumentDetailPage() {
   const [showPreview, setShowPreview] = useState(false);
   const [replaceFile, setReplaceFile] = useState<File | null>(null);
   const [replacing, setReplacing] = useState(false);
-  const [error, setError] = useState("");
 
   const deleteDoc = useMutation({
     mutationFn: () => DocumentsApi.remove(id),
-    onSuccess: () => navigate("/documents"),
+    onSuccess: () => {
+      toast.success("Document deleted");
+      navigate("/documents");
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Delete failed"),
   });
 
   const onReplace = async (e: FormEvent) => {
     e.preventDefault();
-    setError("");
     if (!replaceFile) {
-      setError("Choose a file");
+      toast.error("Choose a file");
       return;
     }
     setReplacing(true);
@@ -55,8 +50,9 @@ export default function DocumentDetailPage() {
       await DocumentsApi.replace(id, fd);
       setReplaceFile(null);
       void qc.invalidateQueries({ queryKey: ["document", id] });
+      toast.success("File replaced and re-indexing started");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "replace failed");
+      toast.error(err instanceof Error ? err.message : "Replace failed");
     } finally {
       setReplacing(false);
     }
@@ -144,11 +140,6 @@ export default function DocumentDetailPage() {
             {replacing ? "Replacing…" : "Replace and re-index"}
           </Button>
         </form>
-        {error && (
-          <div className="mt-3">
-            <ErrorBox message={error} />
-          </div>
-        )}
       </Card>
     </div>
   );
