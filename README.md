@@ -2,7 +2,7 @@
 
 문서 중심의 RAG 플랫폼입니다. LangChain LCEL 검색 파이프라인, FastAPI REST 서버, FastMCP 어댑터, React 관리자 UI로 구성됩니다.
 
-> 영어 버전: [README.en.md](README.en.md) | 사용자 가이드: [docs/user-guide.ko.md](docs/user-guide.ko.md)
+> 사용자 가이드: [docs/user-guide.ko.md](docs/user-guide.ko.md)
 
 ## 아키텍처
 
