@@ -5,8 +5,8 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import select
 
-from app.api.deps import CurrentUser, DbDep, ServiceAdminDep, ServiceMemberDep, SuperAdminDep
-from app.db.models import Service, ServiceMembership, ServiceRole, SuperAdmin, User
+from app.api.deps import CurrentUser, DbDep, ServiceAdminDep, ServiceMemberDep, SuperAdminDep, is_superadmin
+from app.db.models import Service, ServiceMembership, ServiceRole, User
 from app.schemas.services import (
     ServiceCreate,
     ServiceMemberCreate,
@@ -58,7 +58,7 @@ def delete_service(service_id: int, _user: SuperAdminDep, db: DbDep) -> None:
 
 @router.get("/me/services", response_model=list[ServiceWithRoleOut])
 def list_my_services(user: CurrentUser, db: DbDep) -> list[ServiceWithRoleOut]:
-    if db.get(SuperAdmin, user.id):
+    if is_superadmin(db, user.id):
         services = list(db.execute(select(Service).order_by(Service.name)).scalars())
         return [ServiceWithRoleOut(**ServiceOut.model_validate(s).model_dump(), role=ServiceRole.admin) for s in services]
     rows = db.execute(

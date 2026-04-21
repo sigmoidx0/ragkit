@@ -5,9 +5,9 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import select
 
-from app.api.deps import CurrentUser, DbDep
+from app.api.deps import CurrentUser, DbDep, is_superadmin
 from app.core.config import get_settings
-from app.db.models import SuperAdmin, User
+from app.db.models import User
 from app.schemas.auth import LoginRequest, TokenResponse
 from app.schemas.users import MeOut
 from app.security.passwords import verify_password
@@ -31,5 +31,5 @@ def login(payload: LoginRequest, db: DbDep) -> TokenResponse:
 @router.get("/me", response_model=MeOut)
 def me(current: CurrentUser, db: DbDep) -> MeOut:
     return MeOut.model_validate(current).model_copy(
-        update={"is_superadmin": db.get(SuperAdmin, current.id) is not None}
+        update={"is_superadmin": is_superadmin(db, current.id)}
     )

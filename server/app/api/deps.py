@@ -14,6 +14,10 @@ from app.db.session import get_db
 from app.security.tokens import decode_token
 
 
+def is_superadmin(db: Session, user_id: int) -> bool:
+    return db.get(SuperAdmin, user_id) is not None
+
+
 def _parse_bearer(authorization: str | None) -> str | None:
     if not authorization:
         return None
@@ -93,7 +97,7 @@ def get_service_membership(
 
     Superadmins bypass the membership table and get a virtual admin membership.
     """
-    if db.get(SuperAdmin, user.id):
+    if is_superadmin(db, user.id):
         return ServiceMembership(user_id=user.id, service_id=service_id, role=ServiceRole.admin)
     membership = db.execute(
         select(ServiceMembership).where(
@@ -122,7 +126,7 @@ def require_service_admin(membership: ServiceMemberDep) -> ServiceMembership:
 
 
 def require_superadmin(user: CurrentUser, db: DbDep) -> User:
-    if not db.get(SuperAdmin, user.id):
+    if not is_superadmin(db, user.id):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "superadmin only")
     return user
 
