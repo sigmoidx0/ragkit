@@ -19,7 +19,7 @@ flowchart LR
 | 경로       | 내용                                                     |
 | ---------- | -------------------------------------------------------- |
 | `server/`  | FastAPI REST API, 문서 인제스트, 임베딩, Qdrant, LCEL    |
-| `admin/`   | Vite + React + TypeScript 관리자 SPA (로그인, 문서, 검색) |
+| `admin/`   | Vite + React + TypeScript 관리자 SPA (로그인, 문서, 검색, 멤버·서비스 관리) |
 
 FastMCP 어댑터는 **별도 레포**(`ragkit-mcp`)에 있습니다. MCP와 REST 서버를 독립적으로 버전 관리·배포할 수 있도록 같은 상위 디렉토리에 나란히 클론하세요.
 
@@ -62,7 +62,7 @@ npm run dev
 
 관리자 UI는 http://localhost:5173 에서 접근할 수 있습니다.
 
-서버 최초 기동 시 `server/config.yaml`의 `admin_bootstrap.email`(기본값 `admin@example.com`)과 `INITIAL_ADMIN_PASSWORD` 환경변수로 첫 번째 사용자를 자동 생성합니다. 추가 계정이 필요하면 DB에 직접 삽입하세요.
+서버 최초 기동 시 `server/config.yaml`의 `admin_bootstrap.email`(기본값 `admin@example.com`)과 `INITIAL_ADMIN_PASSWORD` 환경변수로 첫 번째 superadmin 계정과 Default 서비스를 자동 생성합니다. 추가 서비스는 관리자 UI의 Services 페이지에서, 추가 계정은 DB에 직접 삽입 후 Members 페이지에서 서비스에 초대하세요.
 
 ## 설정
 
