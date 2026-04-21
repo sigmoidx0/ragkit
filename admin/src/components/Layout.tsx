@@ -1,6 +1,7 @@
 import { Link, NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "@/auth/AuthProvider";
 import { useService } from "@/services/ServiceProvider";
+
 import { cn } from "@/lib/cn";
 import { Button } from "./ui";
 
@@ -11,6 +12,8 @@ const NAV_LINK_ACTIVE = "bg-slate-200 text-slate-900";
 export default function Layout() {
   const { user, logout } = useAuth();
   const { services, current, select } = useService();
+  const isSuperAdmin = user?.is_superadmin ?? false;
+  const isServiceAdmin = current?.role === "admin";
 
   return (
     <div className="flex min-h-full">
@@ -31,6 +34,22 @@ export default function Layout() {
           >
             Search
           </NavLink>
+          {isServiceAdmin && (
+            <NavLink
+              to="/members"
+              className={({ isActive }) => cn(NAV_LINK, isActive && NAV_LINK_ACTIVE)}
+            >
+              Members
+            </NavLink>
+          )}
+          {isSuperAdmin && (
+            <NavLink
+              to="/services"
+              className={({ isActive }) => cn(NAV_LINK, isActive && NAV_LINK_ACTIVE)}
+            >
+              Services
+            </NavLink>
+          )}
         </nav>
       </aside>
       <main className="flex-1 overflow-x-auto">

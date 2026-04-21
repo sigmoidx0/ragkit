@@ -7,6 +7,8 @@ import LoginPage from "./pages/LoginPage";
 import DocumentsPage from "./pages/DocumentsPage";
 import DocumentDetailPage from "./pages/DocumentDetailPage";
 import SearchPage from "./pages/SearchPage";
+import ServicesPage from "./pages/ServicesPage";
+import MembersPage from "./pages/MembersPage";
 
 export default function App() {
   return (
@@ -27,6 +29,8 @@ export default function App() {
         <Route path="/documents" element={<DocumentsPage />} />
         <Route path="/documents/:id" element={<DocumentDetailPage />} />
         <Route path="/search" element={<SearchPage />} />
+        <Route path="/services" element={<ServicesPage />} />
+        <Route path="/members" element={<MembersPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

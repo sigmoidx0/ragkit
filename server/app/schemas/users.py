@@ -10,5 +10,6 @@ class UserOut(BaseModel):
 
     id: int
     email: EmailStr
+    is_superadmin: bool = False
     created_at: datetime
     updated_at: datetime

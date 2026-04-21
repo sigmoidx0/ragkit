@@ -3,6 +3,7 @@ import type {
   DocumentListResponse,
   DocumentSummary,
   SearchResponse,
+  Service,
   ServiceMember,
   ServiceWithRole,
   TokenResponse,
@@ -17,6 +18,11 @@ export const AuthApi = {
 
 export const ServicesApi = {
   listMine: () => apiFetch<ServiceWithRole[]>("/me/services"),
+  listAll: () => apiFetch<Service[]>("/services"),
+  create: (name: string, slug: string) =>
+    apiFetch<Service>("/services", { body: { name, slug } }),
+  remove: (serviceId: number) =>
+    apiFetch<void>(`/services/${serviceId}`, { method: "DELETE" }),
   listMembers: (serviceId: number) =>
     apiFetch<ServiceMember[]>(`/services/${serviceId}/members`),
   addMember: (serviceId: number, userId: number, role: string) =>
@@ -50,6 +56,10 @@ export const DocumentsApi = {
   remove: (serviceId: number, id: number) =>
     apiFetch<void>(`/services/${serviceId}/documents/${id}`, { method: "DELETE" }),
   fileUrl: (serviceId: number, id: number) => `/api/services/${serviceId}/documents/${id}/file`,
+};
+
+export const UsersApi = {
+  list: () => apiFetch<User[]>("/users"),
 };
 
 export const SearchApi = {
