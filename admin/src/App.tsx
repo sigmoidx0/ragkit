@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { Toaster } from "sonner";
 import Layout from "./components/Layout";
 import { RequireAuth } from "./auth/guards";
+import { ServiceProvider } from "./services/ServiceProvider";
 import LoginPage from "./pages/LoginPage";
 import DocumentsPage from "./pages/DocumentsPage";
 import DocumentDetailPage from "./pages/DocumentDetailPage";
@@ -16,7 +17,9 @@ export default function App() {
       <Route
         element={
           <RequireAuth>
-            <Layout />
+            <ServiceProvider>
+              <Layout />
+            </ServiceProvider>
           </RequireAuth>
         }
       >

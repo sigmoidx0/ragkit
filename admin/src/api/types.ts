@@ -11,10 +11,34 @@ export interface TokenResponse {
   expires_in: number;
 }
 
-export type DocumentStatus = "pending" | "ready" | "failed";
+export type DocumentStatus = "pending" | "chunking" | "embedding" | "indexed" | "failed";
+
+export type ServiceRole = "admin" | "member" | "viewer";
+
+export interface Service {
+  id: number;
+  name: string;
+  slug: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ServiceWithRole extends Service {
+  role: ServiceRole;
+}
+
+export interface ServiceMember {
+  id: number;
+  user_id: number;
+  service_id: number;
+  role: ServiceRole;
+  created_at: string;
+  updated_at: string;
+}
 
 export interface DocumentSummary {
   id: number;
+  service_id: number;
   title: string;
   description: string | null;
   source_filename: string;

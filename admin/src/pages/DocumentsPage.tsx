@@ -4,23 +4,26 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { DocumentsApi } from "@/api/endpoints";
 import { Badge, Button, Card, Input, Label, Textarea } from "@/components/ui";
+import { useService } from "@/services/ServiceProvider";
 import type { DocumentStatus } from "@/api/types";
 
 function statusTone(s: DocumentStatus): "green" | "amber" | "red" {
-  if (s === "ready") return "green";
-  if (s === "pending") return "amber";
+  if (s === "indexed") return "green";
+  if (s === "pending" || s === "chunking" || s === "embedding") return "amber";
   return "red";
 }
 
 export default function DocumentsPage() {
   const qc = useQueryClient();
+  const { current: service } = useService();
   const [q, setQ] = useState("");
   const [offset, setOffset] = useState(0);
   const limit = 25;
 
   const listQuery = useQuery({
-    queryKey: ["documents", { q, limit, offset }],
-    queryFn: () => DocumentsApi.list({ q: q || undefined, limit, offset }),
+    queryKey: ["documents", service?.id, { q, limit, offset }],
+    queryFn: () => DocumentsApi.list(service!.id, { q: q || undefined, limit, offset }),
+    enabled: service != null,
   });
 
   const [uploading, setUploading] = useState(false);
@@ -29,9 +32,9 @@ export default function DocumentsPage() {
   const [description, setDescription] = useState("");
 
   const createDoc = useMutation({
-    mutationFn: (fd: FormData) => DocumentsApi.create(fd),
+    mutationFn: (fd: FormData) => DocumentsApi.create(service!.id, fd),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["documents"] });
+      void qc.invalidateQueries({ queryKey: ["documents", service?.id] });
       setFile(null);
       setTitle("");
       setDescription("");
@@ -41,6 +44,10 @@ export default function DocumentsPage() {
 
   const onUpload = async (e: FormEvent) => {
     e.preventDefault();
+    if (!service) {
+      toast.error("No service selected");
+      return;
+    }
     if (!file) {
       toast.error("Please choose a file");
       return;
@@ -65,6 +72,10 @@ export default function DocumentsPage() {
 
   const items = listQuery.data?.items ?? [];
   const total = listQuery.data?.total ?? 0;
+
+  if (!service) {
+    return <div className="text-slate-500">No service available.</div>;
+  }
 
   return (
     <div className="space-y-6">

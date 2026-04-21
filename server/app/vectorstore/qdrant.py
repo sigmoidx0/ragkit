@@ -95,17 +95,15 @@ class QdrantStore:
         *,
         vector: list[float],
         top_k: int,
+        service_id: int | None = None,
         document_id: int | None = None,
     ) -> list[SearchHit]:
-        flt = None
+        conditions = []
+        if service_id is not None:
+            conditions.append(qm.FieldCondition(key="service_id", match=qm.MatchValue(value=service_id)))
         if document_id is not None:
-            flt = qm.Filter(
-                must=[
-                    qm.FieldCondition(
-                        key="document_id", match=qm.MatchValue(value=document_id)
-                    )
-                ]
-            )
+            conditions.append(qm.FieldCondition(key="document_id", match=qm.MatchValue(value=document_id)))
+        flt = qm.Filter(must=conditions) if conditions else None
         results = self._client.query_points(
             collection_name=self._collection,
             query=vector,

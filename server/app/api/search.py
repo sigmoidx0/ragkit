@@ -4,19 +4,29 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app.api.deps import DbDep, ServiceOrUser
+from app.api.deps import DbDep, ServiceMemberDep
 from app.core.config import get_settings
 from app.rag.chain import SearchQuery, run_search
 from app.schemas.search import SearchHitOut, SearchRequest, SearchResponse
 
-router = APIRouter(prefix="/search", tags=["search"])
+router = APIRouter(tags=["search"])
 
 
-@router.post("", response_model=SearchResponse)
-def search(payload: SearchRequest, db: DbDep, _auth: ServiceOrUser) -> SearchResponse:
+@router.post("/services/{service_id}/search", response_model=SearchResponse)
+def search(
+    service_id: int,
+    payload: SearchRequest,
+    db: DbDep,
+    _membership: ServiceMemberDep,
+) -> SearchResponse:
     settings = get_settings()
     top_k = payload.top_k or settings.search.default_top_k
-    query = SearchQuery(query=payload.query, top_k=top_k, document_id=payload.document_id)
+    query = SearchQuery(
+        query=payload.query,
+        top_k=top_k,
+        service_id=service_id,
+        document_id=payload.document_id,
+    )
     hits = run_search(db, query)
     return SearchResponse(
         query=payload.query,

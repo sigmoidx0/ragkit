@@ -10,22 +10,20 @@ from fastapi.responses import FileResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.api.deps import CurrentUser, DbDep
-from app.db.models import Document, DocumentStatus
+from app.api.deps import DbDep, ServiceAdminDep, ServiceMemberDep, ServiceWriterDep
+from app.db.models import Document, DocumentStatus, Service
 from app.ingest.loaders import guess_mime_type, convert_to_documents
 from app.mappers.document_mapper import to_document_list_response, to_document_out
 from app.schemas.documents import DocumentListResponse, DocumentOut
 from app.services.documents import delete_document, delete_document_dir, save_document_file
-from app.services.indexing import index_document
-from app.services.indexing import clear_document_index
+from app.services.indexing import index_document, clear_document_index
 from app.storage import get_storage
 from app.storage.local import LocalStorage
 
-router = APIRouter(prefix="/documents", tags=["documents"])
+router = APIRouter(prefix="/services/{service_id}/documents", tags=["documents"])
 
 
 def get_tx_db(db: DbDep) -> Iterator[Session]:
-    """Write transaction boundary to avoid scattered commit/rollback calls."""
     try:
         yield db
         db.commit()
@@ -39,14 +37,15 @@ TxDbDep = Annotated[Session, Depends(get_tx_db)]
 
 @router.get("", response_model=DocumentListResponse)
 def list_documents(
+    service_id: int,
     db: DbDep,
-    _user: CurrentUser,
+    _membership: ServiceMemberDep,
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     q: str | None = Query(None),
 ) -> DocumentListResponse:
-    stmt = select(Document)
-    count_stmt = select(func.count()).select_from(Document)
+    stmt = select(Document).where(Document.service_id == service_id)
+    count_stmt = select(func.count()).select_from(Document).where(Document.service_id == service_id)
     if q:
         like = f"%{q}%"
         stmt = stmt.where(Document.title.ilike(like))
@@ -63,16 +62,20 @@ def list_documents(
 
 @router.post("", response_model=DocumentOut, status_code=status.HTTP_201_CREATED)
 def create_document(
-    _user: CurrentUser,
+    service_id: int,
+    _writer: ServiceWriterDep,
     db: TxDbDep,
     file: UploadFile = File(...),
     title: str = Form(...),
     description: str | None = Form(None),
 ) -> DocumentOut:
+    if not db.get(Service, service_id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "service not found")
     if not file.filename:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "file is required")
 
     document = Document(
+        service_id=service_id,
         title=title,
         description=description,
         source_filename=file.filename,
@@ -99,8 +102,10 @@ def create_document(
 
 
 @router.get("/{document_id}", response_model=DocumentOut)
-def get_document(document_id: int, db: DbDep, _user: CurrentUser) -> DocumentOut:
-    document = db.get(Document, document_id)
+def get_document(service_id: int, document_id: int, db: DbDep, _membership: ServiceMemberDep) -> DocumentOut:
+    document = db.execute(
+        select(Document).where(Document.id == document_id, Document.service_id == service_id)
+    ).scalar_one_or_none()
     if not document:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "document not found")
     return to_document_out(document)
@@ -108,12 +113,15 @@ def get_document(document_id: int, db: DbDep, _user: CurrentUser) -> DocumentOut
 
 @router.post("/{document_id}/replace", response_model=DocumentOut)
 def replace_document(
+    service_id: int,
     document_id: int,
-    _user: CurrentUser,
+    _writer: ServiceWriterDep,
     db: TxDbDep,
     file: UploadFile = File(...),
 ) -> DocumentOut:
-    document = db.get(Document, document_id)
+    document = db.execute(
+        select(Document).where(Document.id == document_id, Document.service_id == service_id)
+    ).scalar_one_or_none()
     if not document:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "document not found")
     if not file.filename:
@@ -135,11 +143,14 @@ def replace_document(
 
 @router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_document_endpoint(
+    service_id: int,
     document_id: int,
-    _user: CurrentUser,
+    _writer: ServiceWriterDep,
     db: TxDbDep,
 ) -> None:
-    document = db.get(Document, document_id)
+    document = db.execute(
+        select(Document).where(Document.id == document_id, Document.service_id == service_id)
+    ).scalar_one_or_none()
     if not document:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "document not found")
     delete_document(document)
@@ -147,13 +158,13 @@ def delete_document_endpoint(
 
 
 @router.get("/{document_id}/file")
-def download_file(document_id: int, db: DbDep, _user: CurrentUser) -> FileResponse:
-    document = db.get(Document, document_id)
+def download_file(service_id: int, document_id: int, db: DbDep, _membership: ServiceMemberDep) -> FileResponse:
+    document = db.execute(
+        select(Document).where(Document.id == document_id, Document.service_id == service_id)
+    ).scalar_one_or_none()
     if not document:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "document not found")
     storage = get_storage()
-    # FileResponse requires a local path. S3 backends should override this
-    # endpoint to return a RedirectResponse with a presigned URL instead.
     if not isinstance(storage, LocalStorage):
         raise HTTPException(status.HTTP_501_NOT_IMPLEMENTED, "file download not supported for this storage backend")
     try:

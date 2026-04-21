@@ -49,6 +49,7 @@ def index_document(db: Session, document: Document, docs: list) -> None:
         payloads = [
             {
                 "document_id": document.id,
+                "service_id": document.service_id,
                 "ordinal": c.ordinal,
                 "text": c.text,
                 "source_metadata": c.metadata,

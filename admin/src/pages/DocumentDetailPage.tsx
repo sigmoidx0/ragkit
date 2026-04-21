@@ -4,11 +4,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { DocumentsApi } from "@/api/endpoints";
 import { Badge, Button, Card, Input, Label, formatBytes } from "@/components/ui";
+import { useService } from "@/services/ServiceProvider";
 import type { DocumentStatus } from "@/api/types";
 
 function statusTone(s: DocumentStatus): "green" | "amber" | "red" {
-  if (s === "ready") return "green";
-  if (s === "pending") return "amber";
+  if (s === "indexed") return "green";
+  if (s === "pending" || s === "chunking" || s === "embedding") return "amber";
   return "red";
 }
 
@@ -17,11 +18,12 @@ export default function DocumentDetailPage() {
   const id = Number(params.id);
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const { current: service } = useService();
 
   const { data, isLoading } = useQuery({
-    queryKey: ["document", id],
-    queryFn: () => DocumentsApi.get(id),
-    enabled: Number.isFinite(id),
+    queryKey: ["document", service?.id, id],
+    queryFn: () => DocumentsApi.get(service!.id, id),
+    enabled: Number.isFinite(id) && service != null,
   });
 
   const [showPreview, setShowPreview] = useState(false);
@@ -29,7 +31,7 @@ export default function DocumentDetailPage() {
   const [replacing, setReplacing] = useState(false);
 
   const deleteDoc = useMutation({
-    mutationFn: () => DocumentsApi.remove(id),
+    mutationFn: () => DocumentsApi.remove(service!.id, id),
     onSuccess: () => {
       toast.success("Document deleted");
       navigate("/documents");
@@ -47,9 +49,9 @@ export default function DocumentDetailPage() {
     try {
       const fd = new FormData();
       fd.set("file", replaceFile);
-      await DocumentsApi.replace(id, fd);
+      await DocumentsApi.replace(service!.id, id, fd);
       setReplaceFile(null);
-      void qc.invalidateQueries({ queryKey: ["document", id] });
+      void qc.invalidateQueries({ queryKey: ["document", service?.id, id] });
       toast.success("File replaced and re-indexing started");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Replace failed");
@@ -87,7 +89,7 @@ export default function DocumentDetailPage() {
         </div>
         <div className="flex flex-wrap gap-2">
           <a
-            href={DocumentsApi.fileUrl(id)}
+            href={service ? DocumentsApi.fileUrl(service.id, id) : "#"}
             className="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium hover:bg-slate-100"
           >
             Download
@@ -112,7 +114,7 @@ export default function DocumentDetailPage() {
           {isPdf || isText ? (
             <iframe
               title="preview"
-              src={DocumentsApi.fileUrl(id)}
+              src={service ? DocumentsApi.fileUrl(service.id, id) : ""}
               className="h-[70vh] w-full border-0 bg-white"
             />
           ) : (

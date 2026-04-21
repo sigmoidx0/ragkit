@@ -6,9 +6,10 @@ import os
 from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import User
+from app.db.models import ServiceMembership, ServiceRole, SuperAdmin, User
 from app.db.session import get_db
 from app.security.tokens import decode_token
 
@@ -81,3 +82,51 @@ def get_service_or_user(
 
 
 ServiceOrUser = Annotated[User | None, Depends(get_service_or_user)]
+
+
+def get_service_membership(
+    service_id: int,
+    user: CurrentUser,
+    db: DbDep,
+) -> ServiceMembership:
+    """Return the calling user's membership in the given service.
+
+    Superadmins bypass the membership table and get a virtual admin membership.
+    """
+    if db.get(SuperAdmin, user.id):
+        return ServiceMembership(user_id=user.id, service_id=service_id, role=ServiceRole.admin)
+    membership = db.execute(
+        select(ServiceMembership).where(
+            ServiceMembership.user_id == user.id,
+            ServiceMembership.service_id == service_id,
+        )
+    ).scalar_one_or_none()
+    if not membership:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "not a member of this service")
+    return membership
+
+
+ServiceMemberDep = Annotated[ServiceMembership, Depends(get_service_membership)]
+
+
+def require_service_writer(membership: ServiceMemberDep) -> ServiceMembership:
+    if membership.role == ServiceRole.viewer:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "viewers cannot write")
+    return membership
+
+
+def require_service_admin(membership: ServiceMemberDep) -> ServiceMembership:
+    if membership.role != ServiceRole.admin:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "service admin only")
+    return membership
+
+
+def require_superadmin(user: CurrentUser, db: DbDep) -> User:
+    if not db.get(SuperAdmin, user.id):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "superadmin only")
+    return user
+
+
+ServiceWriterDep = Annotated[ServiceMembership, Depends(require_service_writer)]
+ServiceAdminDep = Annotated[ServiceMembership, Depends(require_service_admin)]
+SuperAdminDep = Annotated[User, Depends(require_superadmin)]

@@ -4,9 +4,11 @@ import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { SearchApi } from "@/api/endpoints";
 import { Button, Card, Input, Label } from "@/components/ui";
+import { useService } from "@/services/ServiceProvider";
 import type { SearchResponse } from "@/api/types";
 
 export default function SearchPage() {
+  const { current: service } = useService();
   const [query, setQuery] = useState("");
   const [topK, setTopK] = useState(5);
   const [docId, setDocId] = useState("");
@@ -14,7 +16,7 @@ export default function SearchPage() {
 
   const run = useMutation({
     mutationFn: () =>
-      SearchApi.run({
+      SearchApi.run(service!.id, {
         query,
         top_k: topK,
         document_id: docId.trim() ? Number(docId) : undefined,
@@ -25,6 +27,10 @@ export default function SearchPage() {
 
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
+    if (!service) {
+      toast.error("No service selected");
+      return;
+    }
     setResult(null);
     run.mutate();
   };
@@ -66,7 +72,7 @@ export default function SearchPage() {
             />
           </div>
           <div className="md:col-span-4">
-            <Button type="submit" disabled={run.isPending}>
+            <Button type="submit" disabled={run.isPending || !service}>
               {run.isPending ? "Searching…" : "Search"}
             </Button>
           </div>
