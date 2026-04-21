@@ -9,7 +9,7 @@ from app.api.deps import CurrentUser, DbDep
 from app.core.config import get_settings
 from app.db.models import SuperAdmin, User
 from app.schemas.auth import LoginRequest, TokenResponse
-from app.schemas.users import UserOut
+from app.schemas.users import MeOut
 from app.security.passwords import verify_password
 from app.security.tokens import create_access_token
 
@@ -28,8 +28,8 @@ def login(payload: LoginRequest, db: DbDep) -> TokenResponse:
     )
 
 
-@router.get("/me", response_model=UserOut)
-def me(current: CurrentUser, db: DbDep) -> UserOut:
-    return UserOut.model_validate(current).model_copy(
+@router.get("/me", response_model=MeOut)
+def me(current: CurrentUser, db: DbDep) -> MeOut:
+    return MeOut.model_validate(current).model_copy(
         update={"is_superadmin": db.get(SuperAdmin, current.id) is not None}
     )
