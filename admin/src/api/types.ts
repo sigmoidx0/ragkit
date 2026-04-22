@@ -29,7 +29,6 @@ export interface ServiceWithRole extends Service {
 }
 
 export interface ServiceMember {
-  id: number;
   user_id: number;
   service_id: number;
   role: ServiceRole;

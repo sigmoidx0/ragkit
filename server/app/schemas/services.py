@@ -25,7 +25,6 @@ class ServiceOut(BaseModel):
 class ServiceMemberOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
-    id: int
     user_id: int
     service_id: int
     role: ServiceRole
