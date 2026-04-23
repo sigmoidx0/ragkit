@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import ReactMarkdown from "react-markdown";
 import { DocumentsApi } from "@/api/endpoints";
 import { Badge, Button, Card, Input, Label, formatBytes } from "@/components/ui";
 import { useService } from "@/services/ServiceProvider";
@@ -27,6 +28,13 @@ export default function DocumentDetailPage() {
   });
 
   const [showPreview, setShowPreview] = useState(false);
+  const [showMarkdown, setShowMarkdown] = useState(false);
+
+  const markdownQuery = useQuery({
+    queryKey: ["document-markdown", service?.id, id],
+    queryFn: () => DocumentsApi.previewText(service!.id, id),
+    enabled: showMarkdown && service != null && Number.isFinite(id),
+  });
   const [replaceFile, setReplaceFile] = useState<File | null>(null);
   const [replacing, setReplacing] = useState(false);
 
@@ -97,6 +105,9 @@ export default function DocumentDetailPage() {
           <Button variant="secondary" size="sm" onClick={() => setShowPreview((v) => !v)}>
             {showPreview ? "Hide preview" : "Preview"}
           </Button>
+          <Button variant="secondary" size="sm" onClick={() => setShowMarkdown((v) => !v)}>
+            {showMarkdown ? "Hide markdown" : "View markdown"}
+          </Button>
           <Button
             variant="danger"
             size="sm"
@@ -108,6 +119,23 @@ export default function DocumentDetailPage() {
           </Button>
         </div>
       </div>
+
+      {showMarkdown && (
+        <Card className="p-5">
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-600">
+            Converted Markdown
+          </h2>
+          {markdownQuery.isLoading && <div className="text-sm text-slate-500">Loading…</div>}
+          {markdownQuery.isError && (
+            <div className="text-sm text-red-600">Failed to load markdown.</div>
+          )}
+          {markdownQuery.data && (
+            <div className="prose prose-sm max-w-none overflow-auto rounded border border-slate-200 bg-slate-50 p-4 max-h-[70vh]">
+              <ReactMarkdown>{markdownQuery.data.text}</ReactMarkdown>
+            </div>
+          )}
+        </Card>
+      )}
 
       {showPreview && (
         <Card className="overflow-hidden p-0">

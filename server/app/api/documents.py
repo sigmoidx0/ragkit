@@ -160,6 +160,21 @@ def delete_document_endpoint(
     db.delete(document)
 
 
+@router.get("/{document_id}/preview-text")
+def preview_text(service_id: int, document_id: int, db: DbDep, _membership: ServiceMemberDep) -> dict[str, str]:
+    document = db.execute(
+        select(Document).where(Document.id == document_id, Document.service_id == service_id)
+    ).scalar_one_or_none()
+    if not document:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "document not found")
+    with get_storage().as_local_path(document.file_path) as path:
+        try:
+            docs = convert_to_documents(path)
+        except Exception as e:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"conversion failed: {e}") from e
+    return {"text": "\n\n".join(d.page_content for d in docs)}
+
+
 @router.get("/{document_id}/file")
 def download_file(service_id: int, document_id: int, db: DbDep, _membership: ServiceMemberDep) -> FileResponse:
     document = db.execute(

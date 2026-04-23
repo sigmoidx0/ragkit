@@ -11,6 +11,9 @@ __pycache__/
 node_modules/
 dist/
 .vite/
+admin/vite.config.js
+admin/vite.config.d.ts
+admin/tsconfig.tsbuildinfo
 
 # Data / runtime
 data/
@@ -33,3 +36,4 @@ CLAUDE.md
 
 TODO.md
 docs/tech-debt.md
+

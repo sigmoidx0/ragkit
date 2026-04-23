@@ -4,8 +4,6 @@
 
 :root {
   color-scheme: light;
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
-    "Helvetica Neue", Arial, sans-serif;
 }
 
 html,
@@ -15,5 +13,5 @@ body,
 }
 
 body {
-  @apply bg-slate-50 text-slate-900 antialiased;
+  @apply bg-[#F8F9FA] text-[#2D3748] antialiased;
 }

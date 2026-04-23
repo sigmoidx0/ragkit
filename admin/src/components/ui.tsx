@@ -1,20 +1,27 @@
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
+import type {
+  ButtonHTMLAttributes,
+  InputHTMLAttributes,
+  ReactNode,
+  SelectHTMLAttributes,
+  TextareaHTMLAttributes,
+} from "react";
 import { cn } from "@/lib/cn";
 
 type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
 type ButtonSize = "sm" | "md";
 
 const BTN_VARIANT: Record<ButtonVariant, string> = {
-  primary: "bg-slate-900 text-white hover:bg-slate-800 disabled:bg-slate-400",
+  primary:
+    "bg-teal-400 text-white hover:bg-teal-500 disabled:bg-teal-200",
   secondary:
-    "bg-white text-slate-900 border border-slate-300 hover:bg-slate-100 disabled:text-slate-400",
-  ghost: "bg-transparent hover:bg-slate-100 text-slate-700",
-  danger: "bg-red-600 text-white hover:bg-red-700 disabled:bg-red-300",
+    "bg-white text-[#2D3748] border border-gray-200 hover:bg-gray-50 shadow-sm disabled:text-gray-400",
+  ghost: "bg-transparent hover:bg-gray-100 text-[#2D3748]",
+  danger: "bg-red-500 text-white hover:bg-red-600 disabled:bg-red-300",
 };
 
 const BTN_SIZE: Record<ButtonSize, string> = {
-  sm: "px-2.5 py-1 text-sm rounded-md",
-  md: "px-3.5 py-2 text-sm rounded-md",
+  sm: "px-3 py-1.5 text-xs rounded-xl",
+  md: "px-4 py-2 text-sm rounded-xl",
 };
 
 export function Button({
@@ -30,7 +37,7 @@ export function Button({
     <button
       {...rest}
       className={cn(
-        "inline-flex items-center justify-center font-medium transition-colors disabled:cursor-not-allowed",
+        "inline-flex items-center justify-center font-semibold transition-colors disabled:cursor-not-allowed",
         BTN_VARIANT[variant],
         BTN_SIZE[size],
         className,
@@ -39,15 +46,12 @@ export function Button({
   );
 }
 
-export function Input({
-  className,
-  ...rest
-}: InputHTMLAttributes<HTMLInputElement>) {
+export function Input({ className, ...rest }: InputHTMLAttributes<HTMLInputElement>) {
   return (
     <input
       {...rest}
       className={cn(
-        "block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500 disabled:bg-slate-100",
+        "block w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-[#2D3748] placeholder:text-[#A0AEC0] shadow-sm focus:border-teal-300 focus:outline-none focus:ring-2 focus:ring-teal-100 disabled:bg-gray-50",
         className,
       )}
     />
@@ -62,7 +66,7 @@ export function Textarea({
     <textarea
       {...rest}
       className={cn(
-        "block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500",
+        "block w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-[#2D3748] placeholder:text-[#A0AEC0] shadow-sm focus:border-teal-300 focus:outline-none focus:ring-2 focus:ring-teal-100",
         className,
       )}
     />
@@ -78,7 +82,7 @@ export function Select({
     <select
       {...rest}
       className={cn(
-        "block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500",
+        "block w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-[#2D3748] shadow-sm focus:border-teal-300 focus:outline-none focus:ring-2 focus:ring-teal-100",
         className,
       )}
     >
@@ -99,7 +103,7 @@ export function Label({
   return (
     <label
       htmlFor={htmlFor}
-      className={cn("mb-1 block text-sm font-medium text-slate-700", className)}
+      className={cn("mb-1 block text-xs font-semibold text-[#2D3748]", className)}
     >
       {children}
     </label>
@@ -116,7 +120,7 @@ export function Card({
   return (
     <div
       className={cn(
-        "rounded-lg border border-slate-200 bg-white shadow-sm",
+        "rounded-2xl border border-gray-100 bg-white shadow-md",
         className,
       )}
     >
@@ -133,16 +137,16 @@ export function Badge({
   tone?: "slate" | "green" | "red" | "amber" | "blue";
 }) {
   const tones: Record<string, string> = {
-    slate: "bg-slate-100 text-slate-700 ring-slate-200",
-    green: "bg-green-100 text-green-800 ring-green-200",
-    red: "bg-red-100 text-red-800 ring-red-200",
-    amber: "bg-amber-100 text-amber-800 ring-amber-200",
-    blue: "bg-blue-100 text-blue-800 ring-blue-200",
+    slate: "bg-gray-100 text-gray-600",
+    green: "bg-teal-50 text-teal-700",
+    red: "bg-red-50 text-red-600",
+    amber: "bg-amber-50 text-amber-700",
+    blue: "bg-blue-50 text-blue-700",
   };
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded px-2 py-0.5 text-xs font-medium ring-1 ring-inset",
+        "inline-flex items-center rounded-lg px-2 py-0.5 text-xs font-semibold",
         tones[tone],
       )}
     >
@@ -154,7 +158,7 @@ export function Badge({
 export function ErrorBox({ message }: { message: string }) {
   if (!message) return null;
   return (
-    <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+    <div className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-600">
       {message}
     </div>
   );

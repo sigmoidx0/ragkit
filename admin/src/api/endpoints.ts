@@ -56,6 +56,8 @@ export const DocumentsApi = {
   remove: (serviceId: number, id: number) =>
     apiFetch<void>(`/services/${serviceId}/documents/${id}`, { method: "DELETE" }),
   fileUrl: (serviceId: number, id: number) => `/api/services/${serviceId}/documents/${id}/file`,
+  previewText: (serviceId: number, id: number) =>
+    apiFetch<{ text: string }>(`/services/${serviceId}/documents/${id}/preview-text`),
 };
 
 export const UsersApi = {
