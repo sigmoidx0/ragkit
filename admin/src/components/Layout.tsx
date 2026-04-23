@@ -44,6 +44,14 @@ export default function Layout() {
           )}
           {isSuperAdmin && (
             <NavLink
+              to="/users"
+              className={({ isActive }) => cn(NAV_LINK, isActive && NAV_LINK_ACTIVE)}
+            >
+              Users
+            </NavLink>
+          )}
+          {isSuperAdmin && (
+            <NavLink
               to="/services"
               className={({ isActive }) => cn(NAV_LINK, isActive && NAV_LINK_ACTIVE)}
             >

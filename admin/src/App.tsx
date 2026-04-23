@@ -9,6 +9,7 @@ import DocumentDetailPage from "./pages/DocumentDetailPage";
 import SearchPage from "./pages/SearchPage";
 import ServicesPage from "./pages/ServicesPage";
 import MembersPage from "./pages/MembersPage";
+import UsersPage from "./pages/UsersPage";
 
 export default function App() {
   return (
@@ -31,6 +32,7 @@ export default function App() {
         <Route path="/search" element={<SearchPage />} />
         <Route path="/services" element={<ServicesPage />} />
         <Route path="/members" element={<MembersPage />} />
+        <Route path="/users" element={<UsersPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

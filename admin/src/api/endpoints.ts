@@ -60,6 +60,8 @@ export const DocumentsApi = {
 
 export const UsersApi = {
   list: () => apiFetch<User[]>("/users"),
+  create: (email: string, password: string) =>
+    apiFetch<User>("/users", { body: { email, password } }),
 };
 
 export const SearchApi = {
