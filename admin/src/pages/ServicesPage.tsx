@@ -81,7 +81,7 @@ export default function ServicesPage() {
       <h1 className="text-2xl font-semibold">Services</h1>
 
       <Card className="p-5">
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-600">
+        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-[#A0AEC0]">
           New Service
         </h2>
         <form onSubmit={onSubmit} className="grid gap-4 md:grid-cols-2">

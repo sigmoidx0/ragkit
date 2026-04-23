@@ -97,18 +97,18 @@ export default function DocumentsPage() {
   const total = listQuery.data?.total ?? 0;
 
   if (!service) {
-    return <div className="text-slate-500">No service available.</div>;
+    return <div className="text-[#A0AEC0]">No service available.</div>;
   }
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Documents</h1>
-        <div className="text-sm text-slate-500">{total} total</div>
+        <div className="text-sm text-[#A0AEC0]">{total} total</div>
       </div>
 
       <Card className="p-5">
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-600">
+        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-[#A0AEC0]">
           Upload
         </h2>
         <form onSubmit={onUpload} className="grid gap-4 md:grid-cols-2">

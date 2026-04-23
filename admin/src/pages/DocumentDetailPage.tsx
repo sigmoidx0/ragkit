@@ -80,7 +80,7 @@ export default function DocumentDetailPage() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">{data.title}</h1>
-          <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-500">
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-[#A0AEC0]">
             <span>{data.source_filename}</span>
             <span>·</span>
             <span>{data.mime_type}</span>
@@ -89,7 +89,7 @@ export default function DocumentDetailPage() {
             <Badge tone={statusTone(data.status)}>{data.status}</Badge>
           </div>
           {data.description && (
-            <p className="mt-2 max-w-2xl text-sm text-slate-700">{data.description}</p>
+            <p className="mt-2 max-w-2xl text-sm text-[#2D3748]">{data.description}</p>
           )}
           {data.error && (
             <p className="mt-2 text-sm text-red-700">Error: {data.error}</p>
@@ -98,7 +98,7 @@ export default function DocumentDetailPage() {
         <div className="flex flex-wrap gap-2">
           <a
             href={service ? DocumentsApi.fileUrl(service.id, id) : "#"}
-            className="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium hover:bg-slate-100"
+            className="inline-flex items-center justify-center rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium hover:bg-gray-100"
           >
             Download
           </a>
@@ -122,15 +122,15 @@ export default function DocumentDetailPage() {
 
       {showMarkdown && (
         <Card className="p-5">
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-600">
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-[#A0AEC0]">
             Converted Markdown
           </h2>
-          {markdownQuery.isLoading && <div className="text-sm text-slate-500">Loading…</div>}
+          {markdownQuery.isLoading && <div className="text-sm text-[#A0AEC0]">Loading…</div>}
           {markdownQuery.isError && (
             <div className="text-sm text-red-600">Failed to load markdown.</div>
           )}
           {markdownQuery.data && (
-            <div className="prose prose-sm max-w-none overflow-auto rounded border border-slate-200 bg-slate-50 p-4 max-h-[70vh]">
+            <div className="prose prose-sm max-w-none overflow-auto rounded border border-gray-100 bg-gray-50 p-4 max-h-[70vh]">
               <ReactMarkdown>{markdownQuery.data.text}</ReactMarkdown>
             </div>
           )}
@@ -146,7 +146,7 @@ export default function DocumentDetailPage() {
               className="h-[70vh] w-full border-0 bg-white"
             />
           ) : (
-            <div className="p-4 text-sm text-slate-600">
+            <div className="p-4 text-sm text-[#A0AEC0]">
               No in-browser preview for this type. Use Download.
             </div>
           )}
@@ -154,7 +154,7 @@ export default function DocumentDetailPage() {
       )}
 
       <Card className="p-5">
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-600">
+        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-[#A0AEC0]">
           Replace file
         </h2>
         <form onSubmit={onReplace} className="flex flex-wrap items-end gap-3">

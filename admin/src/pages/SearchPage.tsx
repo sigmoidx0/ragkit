@@ -81,29 +81,29 @@ export default function SearchPage() {
 
       {result && (
         <Card>
-          <div className="border-b border-slate-200 p-4 text-sm text-slate-600">
+          <div className="border-b border-gray-100 p-4 text-sm text-[#A0AEC0]">
             {result.hits.length} hit{result.hits.length === 1 ? "" : "s"} for{" "}
             <span className="font-mono">{result.query}</span>
           </div>
-          <ul className="divide-y divide-slate-100">
+          <ul className="divide-y divide-gray-100">
             {result.hits.map((h) => (
               <li key={`${h.document_id}:${h.ordinal}`} className="p-4">
                 <div className="mb-1 flex flex-wrap items-center gap-2 text-sm">
                   <Link
                     to={`/documents/${h.document_id}`}
-                    className="font-medium text-slate-900 hover:underline"
+                    className="font-medium text-[#2D3748] hover:underline"
                   >
                     {h.document_title ?? `Document #${h.document_id}`}
                   </Link>
-                  <span className="text-xs text-slate-500">
+                  <span className="text-xs text-[#A0AEC0]">
                     score {h.score.toFixed(3)} · chunk #{h.ordinal}
                   </span>
                 </div>
-                <p className="whitespace-pre-wrap text-sm text-slate-700">{h.text}</p>
+                <p className="whitespace-pre-wrap text-sm text-[#2D3748]">{h.text}</p>
               </li>
             ))}
             {result.hits.length === 0 && (
-              <li className="p-6 text-center text-sm text-slate-500">No matches.</li>
+              <li className="p-6 text-center text-sm text-[#A0AEC0]">No matches.</li>
             )}
           </ul>
         </Card>
