@@ -1,19 +1,19 @@
 @startuml Document Create
 
-title POST /documents — 문서 업로드 & 인덱싱
+title POST /services/{service_id}/documents — 문서 업로드 & 인덱싱
 
 actor Client
 participant "FastAPI\n(documents.py)" as API
 participant "services/\ndocuments.py" as SVC
-participant "FileStorage\n(local.py)" as FS
+participant "Storage\n(get_storage())" as FS
 participant "loaders.py\n(ingest)" as LDR
 participant "indexing.py" as IDX
 participant "chunking.py\n(ingest)" as ING
 participant "Embedder" as EMB
-participant "QdrantStore" as QD
+participant "VectorStore" as QD
 database "SQLite/PG\n(DB)" as DB
 
-Client -> API : POST /documents\n(file, title, description)
+Client -> API : POST /services/{service_id}/documents\n(file, title, description)
 activate API
 
 API -> DB : INSERT Document\n(status=pending, file_path="")
@@ -21,9 +21,9 @@ activate DB
 DB --> API : document.id
 deactivate DB
 
-API -> SVC : save_document_file(document, file)
+API -> SVC : save_document_file(document, file, filename, content_type)
 activate SVC
-SVC -> FS : save_document_file(document_id, file)
+SVC -> FS : storage.save_document_file(document_id, filename, source)
 activate FS
 note right of FS
   SHA-256 계산
@@ -32,7 +32,7 @@ end note
 FS --> SVC : StoredFile(stored_path, size_bytes, sha256)
 deactivate FS
 note right of SVC
-  document 필드 업데이트
+  document 필드 직접 업데이트
   (source_filename, mime_type,
    file_path, size_bytes, sha256)
 end note
@@ -40,7 +40,12 @@ deactivate SVC
 
 API -> DB : flush
 
-API -> LDR : convert_to_documents(abs_path)
+API -> FS : storage.as_local_path(file_path)
+activate FS
+FS --> API : local path (context manager)
+deactivate FS
+
+API -> LDR : convert_to_documents(local_path)
 activate LDR
 note right of LDR
   확장자 기반 로더 선택
@@ -72,8 +77,8 @@ deactivate EMB
 IDX -> QD : upsert(point_ids, vectors, payloads)
 activate QD
 note right of QD
-  payload: document_id, ordinal,
-           text, source_metadata
+  payload: document_id, service_id,
+           ordinal, text, source_metadata
 end note
 QD --> IDX : ok
 deactivate QD
@@ -82,7 +87,9 @@ IDX -> DB : flush (status=indexed)
 
 alt 인덱싱 중 예외 발생
   IDX -> QD : delete_points(inserted_point_ids)
-  IDX -> DB : flush (status=failed, error=msg)
+  IDX --> API : raise RuntimeError
+  API -> SVC : delete_document_dir(document_id)
+  API --> Client : 500 indexing failed
 end
 
 deactivate IDX

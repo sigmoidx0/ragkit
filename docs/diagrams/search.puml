@@ -1,15 +1,15 @@
 @startuml Search
 
-title POST /search — 의미 기반 벡터 검색 (LCEL)
+title POST /services/{service_id}/search — 의미 기반 벡터 검색 (LCEL)
 
 actor Client
 participant "FastAPI\n(search.py)" as API
 participant "chain.py\n(LCEL)" as CHAIN
 participant "Embedder" as EMB
-participant "QdrantStore" as QD
+participant "VectorStore" as QD
 database "SQLite/PG\n(DB)" as DB
 
-Client -> API : POST /search\n{query, top_k?, document_id?}
+Client -> API : POST /services/{service_id}/search\n{query, top_k?, document_id?}
 note right of API
   인증: JWT Bearer 또는
   X-Service-Token (MCP용)
@@ -31,11 +31,11 @@ activate EMB
 EMB --> CHAIN : vector[float]
 deactivate EMB
 
-CHAIN -> QD : search(vector, top_k, document_id?)
+CHAIN -> QD : search(vector, top_k, service_id, document_id?)
 activate QD
 note right of QD
-  document_id 있으면
-  payload filter 적용
+  service_id 필터 적용
+  document_id 있으면 추가 payload filter
   (Qdrant payload index 활용)
 end note
 QD --> CHAIN : list[SearchHit]\n(point_id, score, payload)

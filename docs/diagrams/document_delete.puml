@@ -1,38 +1,42 @@
 @startuml Document Delete
 
-title DELETE /documents/{id} — 문서 삭제
+title DELETE /services/{service_id}/documents/{id} — 문서 삭제
 
 actor Client
 participant "FastAPI\n(documents.py)" as API
+participant "services/\ndocuments.py" as SVC
 participant "indexing.py" as IDX
-participant "FileStorage\n(local.py)" as FS
-participant "QdrantStore" as QD
+participant "Storage\n(get_storage())" as FS
+participant "VectorStore" as QD
 database "SQLite/PG\n(DB)" as DB
 
-Client -> API : DELETE /documents/{id}
+Client -> API : DELETE /services/{service_id}/documents/{id}
 activate API
 
 API -> DB : GET Document by id
 DB --> API : document
 
-API -> IDX : delete_document(document)
-activate IDX
+API -> SVC : delete_document(document)
+activate SVC
 
+SVC -> IDX : clear_document_index(document)
+activate IDX
 IDX -> QD : delete_document(document_id)\n[payload filter]
 activate QD
 QD --> IDX : ok
 deactivate QD
+deactivate IDX
 
-IDX -> FS : delete_document_dir(document_id)
+SVC -> FS : storage.delete_document_dir(document_id)
 activate FS
 note right of FS
   shutil.rmtree (ignore_errors=True)
   documents/{id}/ 폴더 전체 삭제
 end note
-FS --> IDX : ok
+FS --> SVC : ok
 deactivate FS
 
-deactivate IDX
+deactivate SVC
 
 API -> DB : db.delete(document)
 note right of DB
