@@ -102,15 +102,11 @@ export default function DocumentsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Documents</h1>
-        <div className="text-sm text-[#A0AEC0]">{total} total</div>
-      </div>
-
       <Card className="p-5">
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-[#A0AEC0]">
-          Upload
-        </h2>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-[#A0AEC0]">Upload</h2>
+          <span className="text-xs text-[#A0AEC0]">{total} total</span>
+        </div>
         <form onSubmit={onUpload} className="grid gap-4 md:grid-cols-2">
           <div>
             <Label htmlFor="title">Title</Label>
