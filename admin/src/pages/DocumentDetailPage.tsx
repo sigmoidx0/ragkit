@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
 import { DocumentsApi } from "@/api/endpoints";
 import { Badge, Button, Card, Input, Label, formatBytes } from "@/components/ui";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useService } from "@/services/ServiceProvider";
 import type { DocumentStatus } from "@/api/types";
 
@@ -29,6 +30,7 @@ export default function DocumentDetailPage() {
 
   const [showPreview, setShowPreview] = useState(false);
   const [showMarkdown, setShowMarkdown] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const markdownQuery = useQuery({
     queryKey: ["document-markdown", service?.id, id],
@@ -77,6 +79,18 @@ export default function DocumentDetailPage() {
 
   return (
     <div className="space-y-6">
+      <ConfirmDialog
+        open={confirmDelete}
+        title="Delete document?"
+        confirmLabel="Delete"
+        onConfirm={() => {
+          setConfirmDelete(false);
+          deleteDoc.mutate();
+        }}
+        onCancel={() => setConfirmDelete(false)}
+      >
+        Delete <strong>{data.title}</strong>? This cannot be undone.
+      </ConfirmDialog>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">{data.title}</h1>
@@ -111,9 +125,7 @@ export default function DocumentDetailPage() {
           <Button
             variant="danger"
             size="sm"
-            onClick={() => {
-              if (confirm(`Delete ${data.title}?`)) deleteDoc.mutate();
-            }}
+            onClick={() => setConfirmDelete(true)}
           >
             Delete
           </Button>

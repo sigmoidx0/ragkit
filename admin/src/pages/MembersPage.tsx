@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { ServicesApi, UsersApi } from "@/api/endpoints";
 import { Button, Card, Label, Select } from "@/components/ui";
 import { DataTable, type Column } from "@/components/DataTable";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useService } from "@/services/ServiceProvider";
 import type { ServiceMember, ServiceRole } from "@/api/types";
 
@@ -15,6 +16,7 @@ export default function MembersPage() {
 
   const [selectedUserId, setSelectedUserId] = useState<string>("");
   const [selectedRole, setSelectedRole] = useState<ServiceRole>("member");
+  const [confirmRemove, setConfirmRemove] = useState<ServiceMember | null>(null);
 
   const membersQuery = useQuery({
     queryKey: ["members", service?.id],
@@ -101,12 +103,7 @@ export default function MembersPage() {
           variant="danger"
           size="sm"
           disabled={removeMutation.isPending}
-          onClick={() => {
-            const email = users.find((u) => u.id === m.user_id)?.email ?? `#${m.user_id}`;
-            if (confirm(`Remove ${email} from this service?`)) {
-              removeMutation.mutate(m.user_id);
-            }
-          }}
+          onClick={() => setConfirmRemove(m)}
         >
           Remove
         </Button>
@@ -116,8 +113,25 @@ export default function MembersPage() {
 
   if (!service) return <div className="text-[#A0AEC0]">No service selected.</div>;
 
+  const confirmRemoveEmail =
+    confirmRemove != null
+      ? (users.find((u) => u.id === confirmRemove.user_id)?.email ?? `#${confirmRemove.user_id}`)
+      : "";
+
   return (
     <div className="space-y-6">
+      <ConfirmDialog
+        open={confirmRemove != null}
+        title="Remove member?"
+        confirmLabel="Remove"
+        onConfirm={() => {
+          if (confirmRemove) removeMutation.mutate(confirmRemove.user_id);
+          setConfirmRemove(null);
+        }}
+        onCancel={() => setConfirmRemove(null)}
+      >
+        Remove <strong>{confirmRemoveEmail}</strong> from this service?
+      </ConfirmDialog>
       <Card className="p-5">
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-[#A0AEC0]">
           Add Member — {service.name}

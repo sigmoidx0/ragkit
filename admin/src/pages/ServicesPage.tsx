@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { ServicesApi } from "@/api/endpoints";
 import { Button, Card, Input, Label } from "@/components/ui";
 import { DataTable, type Column } from "@/components/DataTable";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useService } from "@/services/ServiceProvider";
 import type { Service } from "@/api/types";
 
@@ -13,6 +14,7 @@ export default function ServicesPage() {
 
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState<Service | null>(null);
 
   const listQuery = useQuery({
     queryKey: ["services-all"],
@@ -64,11 +66,7 @@ export default function ServicesPage() {
           variant="danger"
           size="sm"
           disabled={deleteMutation.isPending}
-          onClick={() => {
-            if (confirm(`Delete "${s.name}"? This cannot be undone.`)) {
-              deleteMutation.mutate(s.id);
-            }
-          }}
+          onClick={() => setConfirmDelete(s)}
         >
           Delete
         </Button>
@@ -78,6 +76,18 @@ export default function ServicesPage() {
 
   return (
     <div className="space-y-6">
+      <ConfirmDialog
+        open={confirmDelete != null}
+        title="Delete service?"
+        confirmLabel="Delete"
+        onConfirm={() => {
+          if (confirmDelete) deleteMutation.mutate(confirmDelete.id);
+          setConfirmDelete(null);
+        }}
+        onCancel={() => setConfirmDelete(null)}
+      >
+        Delete <strong>{confirmDelete?.name}</strong>? This cannot be undone.
+      </ConfirmDialog>
       <Card className="p-5">
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-[#A0AEC0]">
           New Service
