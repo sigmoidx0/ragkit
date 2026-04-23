@@ -1,9 +1,8 @@
-"""Qdrant: one collection, payload keyed by document_id only."""
+"""Qdrant vector store implementation."""
 
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any
 
@@ -11,15 +10,9 @@ from qdrant_client import QdrantClient
 from qdrant_client.http import models as qm
 
 from app.core.config import get_settings
+from app.vectorstore.base import SearchHit, VectorStore
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class SearchHit:
-    point_id: str
-    score: float
-    payload: dict[str, Any]
 
 
 class QdrantStore:
@@ -118,7 +111,7 @@ class QdrantStore:
 
 
 @lru_cache(maxsize=1)
-def get_vectorstore() -> QdrantStore:
+def get_vectorstore() -> VectorStore:
     cfg = get_settings().vectorstore
     return QdrantStore(
         url=cfg.url,

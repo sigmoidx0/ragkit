@@ -1,3 +1,4 @@
-from app.vectorstore.qdrant import QdrantStore, SearchHit, get_vectorstore
+from app.vectorstore.base import SearchHit, VectorStore
+from app.vectorstore.qdrant import get_vectorstore
 
-__all__ = ["QdrantStore", "SearchHit", "get_vectorstore"]
+__all__ = ["VectorStore", "SearchHit", "get_vectorstore"]
