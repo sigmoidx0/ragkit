@@ -3,7 +3,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ServicesApi } from "@/api/endpoints";
 import { Button, Card, Input, Label } from "@/components/ui";
+import { DataTable, type Column } from "@/components/DataTable";
 import { useService } from "@/services/ServiceProvider";
+import type { Service } from "@/api/types";
 
 export default function ServicesPage() {
   const qc = useQueryClient();
@@ -47,6 +49,33 @@ export default function ServicesPage() {
 
   const services = listQuery.data ?? [];
 
+  const SERVICE_COLUMNS: Column<Service>[] = [
+    { header: "Name", render: (s) => <span className="font-medium text-[#2D3748]">{s.name}</span> },
+    { header: "Slug", render: (s) => <span className="font-mono text-[#A0AEC0]">{s.slug}</span> },
+    {
+      header: "Created",
+      render: (s) => <span className="text-[#A0AEC0]">{new Date(s.created_at).toLocaleString()}</span>,
+    },
+    {
+      header: "",
+      className: "text-right",
+      render: (s) => (
+        <Button
+          variant="danger"
+          size="sm"
+          disabled={deleteMutation.isPending}
+          onClick={() => {
+            if (confirm(`Delete "${s.name}"? This cannot be undone.`)) {
+              deleteMutation.mutate(s.id);
+            }
+          }}
+        >
+          Delete
+        </Button>
+      ),
+    },
+  ];
+
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold">Services</h1>
@@ -85,55 +114,13 @@ export default function ServicesPage() {
       </Card>
 
       <Card>
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-            <tr>
-              <th className="px-4 py-2">Name</th>
-              <th className="px-4 py-2">Slug</th>
-              <th className="px-4 py-2">Created</th>
-              <th className="px-4 py-2" />
-            </tr>
-          </thead>
-          <tbody>
-            {listQuery.isLoading && (
-              <tr>
-                <td colSpan={4} className="px-4 py-6 text-center text-slate-500">
-                  Loading…
-                </td>
-              </tr>
-            )}
-            {!listQuery.isLoading && services.length === 0 && (
-              <tr>
-                <td colSpan={4} className="px-4 py-6 text-center text-slate-500">
-                  No services yet.
-                </td>
-              </tr>
-            )}
-            {services.map((s) => (
-              <tr key={s.id} className="border-t border-slate-100 hover:bg-slate-50">
-                <td className="px-4 py-2 font-medium text-slate-900">{s.name}</td>
-                <td className="px-4 py-2 font-mono text-slate-600">{s.slug}</td>
-                <td className="px-4 py-2 text-slate-500">
-                  {new Date(s.created_at).toLocaleString()}
-                </td>
-                <td className="px-4 py-2 text-right">
-                  <Button
-                    variant="danger"
-                    size="sm"
-                    disabled={deleteMutation.isPending}
-                    onClick={() => {
-                      if (confirm(`Delete "${s.name}"? This cannot be undone.`)) {
-                        deleteMutation.mutate(s.id);
-                      }
-                    }}
-                  >
-                    Delete
-                  </Button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <DataTable<Service>
+          columns={SERVICE_COLUMNS}
+          rows={services}
+          rowKey={(s) => s.id}
+          isLoading={listQuery.isLoading}
+          emptyMessage="No services yet."
+        />
       </Card>
     </div>
   );

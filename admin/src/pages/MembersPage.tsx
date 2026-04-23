@@ -3,8 +3,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ServicesApi, UsersApi } from "@/api/endpoints";
 import { Button, Card, Label, Select } from "@/components/ui";
+import { DataTable, type Column } from "@/components/DataTable";
 import { useService } from "@/services/ServiceProvider";
-import type { ServiceRole } from "@/api/types";
+import type { ServiceMember, ServiceRole } from "@/api/types";
 
 const ROLES: ServiceRole[] = ["admin", "member", "viewer"];
 
@@ -67,7 +68,53 @@ export default function MembersPage() {
   const memberUserIds = new Set(members.map((m) => m.user_id));
   const availableUsers = users.filter((u) => !memberUserIds.has(u.id));
 
-  if (!service) return <div className="text-slate-500">No service selected.</div>;
+  const MEMBER_COLUMNS: Column<ServiceMember>[] = [
+    {
+      header: "Email",
+      render: (m) => (
+        <span className="text-[#2D3748]">
+          {users.find((u) => u.id === m.user_id)?.email ?? `#${m.user_id}`}
+        </span>
+      ),
+    },
+    {
+      header: "Role",
+      render: (m) => (
+        <Select
+          value={m.role}
+          onChange={(e) =>
+            updateMutation.mutate({ userId: m.user_id, role: e.target.value as ServiceRole })
+          }
+          className="w-32"
+        >
+          {ROLES.map((r) => (
+            <option key={r} value={r}>{r}</option>
+          ))}
+        </Select>
+      ),
+    },
+    {
+      header: "",
+      className: "text-right",
+      render: (m) => (
+        <Button
+          variant="danger"
+          size="sm"
+          disabled={removeMutation.isPending}
+          onClick={() => {
+            const email = users.find((u) => u.id === m.user_id)?.email ?? `#${m.user_id}`;
+            if (confirm(`Remove ${email} from this service?`)) {
+              removeMutation.mutate(m.user_id);
+            }
+          }}
+        >
+          Remove
+        </Button>
+      ),
+    },
+  ];
+
+  if (!service) return <div className="text-[#A0AEC0]">No service selected.</div>;
 
   return (
     <div className="space-y-6">
@@ -117,71 +164,13 @@ export default function MembersPage() {
       </Card>
 
       <Card>
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-            <tr>
-              <th className="px-4 py-2">Email</th>
-              <th className="px-4 py-2">Role</th>
-              <th className="px-4 py-2" />
-            </tr>
-          </thead>
-          <tbody>
-            {membersQuery.isLoading && (
-              <tr>
-                <td colSpan={3} className="px-4 py-6 text-center text-slate-500">
-                  Loading…
-                </td>
-              </tr>
-            )}
-            {!membersQuery.isLoading && members.length === 0 && (
-              <tr>
-                <td colSpan={3} className="px-4 py-6 text-center text-slate-500">
-                  No members yet.
-                </td>
-              </tr>
-            )}
-            {members.map((m) => {
-              const user = users.find((u) => u.id === m.user_id);
-              return (
-                <tr key={m.user_id} className="border-t border-slate-100 hover:bg-slate-50">
-                  <td className="px-4 py-2 text-slate-900">{user?.email ?? `#${m.user_id}`}</td>
-                  <td className="px-4 py-2">
-                    <Select
-                      value={m.role}
-                      onChange={(e) =>
-                        updateMutation.mutate({
-                          userId: m.user_id,
-                          role: e.target.value as ServiceRole,
-                        })
-                      }
-                      className="w-32"
-                    >
-                      {ROLES.map((r) => (
-                        <option key={r} value={r}>
-                          {r}
-                        </option>
-                      ))}
-                    </Select>
-                  </td>
-                  <td className="px-4 py-2 text-right">
-                    <Button
-                      variant="danger"
-                      size="sm"
-                      disabled={removeMutation.isPending}
-                      onClick={() => {
-                        if (confirm(`Remove ${user?.email ?? `#${m.user_id}`} from this service?`)) {
-                          removeMutation.mutate(m.user_id);
-                        }
-                      }}
-                    >
-                      Remove
-                    </Button>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        <DataTable<ServiceMember>
+          columns={MEMBER_COLUMNS}
+          rows={members}
+          rowKey={(m) => m.user_id}
+          isLoading={membersQuery.isLoading}
+          emptyMessage="No members yet."
+        />
       </Card>
     </div>
   );

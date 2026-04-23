@@ -4,14 +4,37 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { DocumentsApi } from "@/api/endpoints";
 import { Badge, Button, Card, Input, Label, Textarea } from "@/components/ui";
+import { DataTable, type Column } from "@/components/DataTable";
 import { useService } from "@/services/ServiceProvider";
-import type { DocumentStatus } from "@/api/types";
+import type { DocumentSummary, DocumentStatus } from "@/api/types";
 
 function statusTone(s: DocumentStatus): "green" | "amber" | "red" {
   if (s === "indexed") return "green";
   if (s === "pending" || s === "chunking" || s === "embedding") return "amber";
   return "red";
 }
+
+const DOC_COLUMNS: Column<DocumentSummary>[] = [
+  {
+    header: "Title",
+    render: (d) => (
+      <div>
+        <Link to={`/documents/${d.id}`} className="font-medium text-[#2D3748] hover:underline">
+          {d.title}
+        </Link>
+        {d.description && (
+          <div className="line-clamp-1 text-xs text-[#A0AEC0]">{d.description}</div>
+        )}
+      </div>
+    ),
+  },
+  { header: "File", render: (d) => <span className="text-[#A0AEC0]">{d.source_filename}</span> },
+  { header: "Status", render: (d) => <Badge tone={statusTone(d.status)}>{d.status}</Badge> },
+  {
+    header: "Created",
+    render: (d) => <span className="text-[#A0AEC0]">{new Date(d.created_at).toLocaleString()}</span>,
+  },
+];
 
 export default function DocumentsPage() {
   const qc = useQueryClient();
@@ -125,7 +148,7 @@ export default function DocumentsPage() {
       </Card>
 
       <Card>
-        <div className="flex items-center justify-between gap-3 border-b border-slate-200 p-4">
+        <div className="flex items-center justify-between gap-3 border-b border-gray-100 p-4">
           <Input
             placeholder="Filter by title…"
             value={q}
@@ -135,7 +158,7 @@ export default function DocumentsPage() {
             }}
             className="max-w-sm"
           />
-          <div className="flex items-center gap-2 text-sm text-slate-600">
+          <div className="flex items-center gap-2 text-sm text-[#A0AEC0]">
             <Button
               variant="secondary"
               size="sm"
@@ -157,54 +180,13 @@ export default function DocumentsPage() {
             </Button>
           </div>
         </div>
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-            <tr>
-              <th className="px-4 py-2">Title</th>
-              <th className="px-4 py-2">File</th>
-              <th className="px-4 py-2">Status</th>
-              <th className="px-4 py-2">Created</th>
-            </tr>
-          </thead>
-          <tbody>
-            {listQuery.isLoading && (
-              <tr>
-                <td colSpan={4} className="px-4 py-6 text-center text-slate-500">
-                  Loading…
-                </td>
-              </tr>
-            )}
-            {!listQuery.isLoading && items.length === 0 && (
-              <tr>
-                <td colSpan={4} className="px-4 py-6 text-center text-slate-500">
-                  No documents yet.
-                </td>
-              </tr>
-            )}
-            {items.map((d) => (
-              <tr key={d.id} className="border-t border-slate-100 hover:bg-slate-50">
-                <td className="px-4 py-2">
-                  <Link
-                    to={`/documents/${d.id}`}
-                    className="font-medium text-slate-900 hover:underline"
-                  >
-                    {d.title}
-                  </Link>
-                  {d.description && (
-                    <div className="text-xs text-slate-500 line-clamp-1">{d.description}</div>
-                  )}
-                </td>
-                <td className="px-4 py-2 text-slate-600">{d.source_filename}</td>
-                <td className="px-4 py-2">
-                  <Badge tone={statusTone(d.status)}>{d.status}</Badge>
-                </td>
-                <td className="px-4 py-2 text-slate-500">
-                  {new Date(d.created_at).toLocaleString()}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <DataTable<DocumentSummary>
+          columns={DOC_COLUMNS}
+          rows={items}
+          rowKey={(d) => d.id}
+          isLoading={listQuery.isLoading}
+          emptyMessage="No documents yet."
+        />
       </Card>
     </div>
   );

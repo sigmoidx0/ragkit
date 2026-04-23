@@ -3,6 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { UsersApi } from "@/api/endpoints";
 import { Button, Card, Input, Label } from "@/components/ui";
+import { DataTable, type Column } from "@/components/DataTable";
+import type { User } from "@/api/types";
 
 export default function UsersPage() {
   const qc = useQueryClient();
@@ -31,6 +33,14 @@ export default function UsersPage() {
   };
 
   const users = listQuery.data ?? [];
+
+  const USER_COLUMNS: Column<User>[] = [
+    { header: "Email", render: (u) => <span className="text-[#2D3748]">{u.email}</span> },
+    {
+      header: "Created",
+      render: (u) => <span className="text-[#A0AEC0]">{new Date(u.created_at).toLocaleString()}</span>,
+    },
+  ];
 
   return (
     <div className="space-y-6">
@@ -73,32 +83,13 @@ export default function UsersPage() {
       </Card>
 
       <Card>
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-            <tr>
-              <th className="px-4 py-2">Email</th>
-              <th className="px-4 py-2">Created</th>
-            </tr>
-          </thead>
-          <tbody>
-            {listQuery.isLoading && (
-              <tr>
-                <td colSpan={2} className="px-4 py-6 text-center text-slate-500">Loading…</td>
-              </tr>
-            )}
-            {!listQuery.isLoading && users.length === 0 && (
-              <tr>
-                <td colSpan={2} className="px-4 py-6 text-center text-slate-500">No users yet.</td>
-              </tr>
-            )}
-            {users.map((u) => (
-              <tr key={u.id} className="border-t border-slate-100 hover:bg-slate-50">
-                <td className="px-4 py-2 text-slate-900">{u.email}</td>
-                <td className="px-4 py-2 text-slate-500">{new Date(u.created_at).toLocaleString()}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <DataTable<User>
+          columns={USER_COLUMNS}
+          rows={users}
+          rowKey={(u) => u.id}
+          isLoading={listQuery.isLoading}
+          emptyMessage="No users yet."
+        />
       </Card>
     </div>
   );
