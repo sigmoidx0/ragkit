@@ -15,7 +15,7 @@ class UserOut(BaseModel):
 
 
 class MeOut(UserOut):
-    is_superadmin: bool
+    is_superadmin: bool = False
 
 
 class UserCreate(BaseModel):
