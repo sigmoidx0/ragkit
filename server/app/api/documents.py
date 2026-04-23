@@ -13,7 +13,6 @@ from sqlalchemy.orm import Session
 from app.api.deps import DbDep, ServiceAdminDep, ServiceMemberDep, ServiceWriterDep
 from app.db.models import Document, DocumentStatus, Service
 from app.ingest.loaders import guess_mime_type, convert_to_documents
-from app.mappers.document_mapper import to_document_list_response, to_document_out
 from app.schemas.documents import DocumentListResponse, DocumentOut
 from app.services.documents import delete_document, delete_document_dir, save_document_file
 from app.services.indexing import index_document, clear_document_index
@@ -57,7 +56,12 @@ def list_documents(
         .scalars()
         .all()
     )
-    return to_document_list_response(rows, total=total, limit=limit, offset=offset)
+    return DocumentListResponse(
+        items=[DocumentOut.model_validate(r) for r in rows],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.post("", response_model=DocumentOut, status_code=status.HTTP_201_CREATED)
@@ -98,7 +102,7 @@ def create_document(
     except Exception as e:
         delete_document_dir(document.id)
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, f"indexing failed: {e}") from e
-    return to_document_out(document)
+    return DocumentOut.model_validate(document)
 
 
 @router.get("/{document_id}", response_model=DocumentOut)
@@ -108,7 +112,7 @@ def get_document(service_id: int, document_id: int, db: DbDep, _membership: Serv
     ).scalar_one_or_none()
     if not document:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "document not found")
-    return to_document_out(document)
+    return DocumentOut.model_validate(document)
 
 
 @router.post("/{document_id}/replace", response_model=DocumentOut)
@@ -138,7 +142,7 @@ def replace_document(
     with get_storage().as_local_path(document.file_path) as path:
         docs = convert_to_documents(path)
     index_document(db, document, docs)
-    return to_document_out(document)
+    return DocumentOut.model_validate(document)
 
 
 @router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
