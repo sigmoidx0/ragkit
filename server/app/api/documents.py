@@ -17,7 +17,6 @@ from app.schemas.documents import DocumentListResponse, DocumentOut
 from app.services.documents import delete_document, delete_document_dir, save_document_file
 from app.services.indexing import index_document, clear_document_index
 from app.storage import get_storage
-from app.storage.local import LocalStorage
 
 router = APIRouter(prefix="/services/{service_id}/documents", tags=["documents"])
 
@@ -169,10 +168,10 @@ def download_file(service_id: int, document_id: int, db: DbDep, _membership: Ser
     if not document:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "document not found")
     storage = get_storage()
-    if not isinstance(storage, LocalStorage):
-        raise HTTPException(status.HTTP_501_NOT_IMPLEMENTED, "file download not supported for this storage backend")
     try:
         abs_path = storage.absolute(document.file_path)
+    except NotImplementedError:
+        raise HTTPException(status.HTTP_501_NOT_IMPLEMENTED, "file download not supported for this storage backend")
     except ValueError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
     if not abs_path.exists():

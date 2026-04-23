@@ -29,3 +29,11 @@ class StorageBackend(Protocol):
         ...
 
     def delete_document_dir(self, document_id: int) -> None: ...
+
+    def absolute(self, stored_path: str) -> Path:
+        """Return an absolute local Path for direct file serving (e.g. FileResponse).
+
+        Raise NotImplementedError for backends that do not support direct path access
+        (e.g. S3). Callers should catch this and return HTTP 501.
+        """
+        ...

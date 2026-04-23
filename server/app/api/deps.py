@@ -1,4 +1,20 @@
-"""Auth: Bearer JWT in Authorization header (no OAuth2 password flow)."""
+"""Auth: Bearer JWT in Authorization header (no OAuth2 password flow).
+
+Public interface (import these):
+    is_superadmin   — utility: check superadmin status directly
+    DbDep           — SQLAlchemy session
+    CurrentUser     — authenticated user (JWT)
+    ServiceOrUser   — authenticated user or MCP service token (returns None for service)
+    ServiceMemberDep  — membership of current user in the requested service
+    ServiceWriterDep  — member or admin (viewers blocked)
+    ServiceAdminDep   — service admin only
+    SuperAdminDep     — superadmin only
+
+Internal (FastAPI DI callables, not for direct use):
+    _parse_bearer, _get_bearer_token, _get_current_user,
+    _get_service_or_user, _get_service_membership,
+    _require_service_writer, _require_service_admin, _require_superadmin
+"""
 
 from __future__ import annotations
 
@@ -14,9 +30,13 @@ from app.db.session import get_db
 from app.security.tokens import decode_token
 
 
+# ── Public utility ───────────────────────────────────────────────────────────
+
 def is_superadmin(db: Session, user_id: int) -> bool:
     return db.get(SuperAdmin, user_id) is not None
 
+
+# ── Internal DI callables ────────────────────────────────────────────────────
 
 def _parse_bearer(authorization: str | None) -> str | None:
     if not authorization:
@@ -27,7 +47,7 @@ def _parse_bearer(authorization: str | None) -> str | None:
     return None
 
 
-def get_bearer_token(
+def _get_bearer_token(
     authorization: Annotated[str | None, Header(alias="Authorization")] = None,
 ) -> str:
     token = _parse_bearer(authorization)
@@ -37,10 +57,10 @@ def get_bearer_token(
 
 
 DbDep = Annotated[Session, Depends(get_db)]
-BearerDep = Annotated[str, Depends(get_bearer_token)]
+_BearerDep = Annotated[str, Depends(_get_bearer_token)]
 
 
-def get_current_user(db: DbDep, token: BearerDep) -> User:
+def _get_current_user(db: DbDep, token: _BearerDep) -> User:
     try:
         payload = decode_token(token)
     except ValueError as e:
@@ -58,10 +78,10 @@ def get_current_user(db: DbDep, token: BearerDep) -> User:
     return user
 
 
-CurrentUser = Annotated[User, Depends(get_current_user)]
+CurrentUser = Annotated[User, Depends(_get_current_user)]
 
 
-def get_service_or_user(
+def _get_service_or_user(
     db: DbDep,
     authorization: Annotated[str | None, Header(alias="Authorization")] = None,
     x_service_token: Annotated[str | None, Header(alias="X-Service-Token")] = None,
@@ -85,18 +105,14 @@ def get_service_or_user(
     return user
 
 
-ServiceOrUser = Annotated[User | None, Depends(get_service_or_user)]
+ServiceOrUser = Annotated[User | None, Depends(_get_service_or_user)]
 
 
-def get_service_membership(
+def _get_service_membership(
     service_id: int,
     user: CurrentUser,
     db: DbDep,
 ) -> ServiceMembership:
-    """Return the calling user's membership in the given service.
-
-    Superadmins bypass the membership table and get a virtual admin membership.
-    """
     if is_superadmin(db, user.id):
         return ServiceMembership(user_id=user.id, service_id=service_id, role=ServiceRole.admin)
     membership = db.execute(
@@ -110,27 +126,29 @@ def get_service_membership(
     return membership
 
 
-ServiceMemberDep = Annotated[ServiceMembership, Depends(get_service_membership)]
+ServiceMemberDep = Annotated[ServiceMembership, Depends(_get_service_membership)]
 
 
-def require_service_writer(membership: ServiceMemberDep) -> ServiceMembership:
+def _require_service_writer(membership: ServiceMemberDep) -> ServiceMembership:
     if membership.role == ServiceRole.viewer:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "viewers cannot write")
     return membership
 
 
-def require_service_admin(membership: ServiceMemberDep) -> ServiceMembership:
+def _require_service_admin(membership: ServiceMemberDep) -> ServiceMembership:
     if membership.role != ServiceRole.admin:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "service admin only")
     return membership
 
 
-def require_superadmin(user: CurrentUser, db: DbDep) -> User:
+def _require_superadmin(user: CurrentUser, db: DbDep) -> User:
     if not is_superadmin(db, user.id):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "superadmin only")
     return user
 
 
-ServiceWriterDep = Annotated[ServiceMembership, Depends(require_service_writer)]
-ServiceAdminDep = Annotated[ServiceMembership, Depends(require_service_admin)]
-SuperAdminDep = Annotated[User, Depends(require_superadmin)]
+# ── Public type aliases ──────────────────────────────────────────────────────
+
+ServiceWriterDep = Annotated[ServiceMembership, Depends(_require_service_writer)]
+ServiceAdminDep = Annotated[ServiceMembership, Depends(_require_service_admin)]
+SuperAdminDep = Annotated[User, Depends(_require_superadmin)]
