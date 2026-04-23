@@ -12,6 +12,7 @@ dependencies = [
     "python-multipart>=0.0.12",
     "pyyaml>=6.0.2",
     "sqlalchemy>=2.0.35",
+    "alembic>=1.13.0",
     "psycopg[binary]>=3.2.1",
     "python-jose[cryptography]>=3.3.0",
     "passlib[bcrypt]>=1.7.4",

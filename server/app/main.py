@@ -12,16 +12,24 @@ from app.api import auth, documents, health, search, services, users
 from app.core.config import get_settings
 from app.core.logging import configure_logging
 from app.db.bootstrap import bootstrap_admin
-from app.db.session import SessionLocal, create_tables
+from app.db.session import SessionLocal
 from app.vectorstore import get_vectorstore
 
 logger = logging.getLogger(__name__)
 
 
+def _run_migrations() -> None:
+    from alembic import command
+    from alembic.config import Config
+    from pathlib import Path
+    cfg = Config(str(Path(__file__).resolve().parents[2] / "alembic.ini"))
+    command.upgrade(cfg, "head")
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     configure_logging()
-    create_tables()
+    _run_migrations()
     with SessionLocal() as db:
         bootstrap_admin(db)
     try:
