@@ -65,12 +65,28 @@ class MarkdownHeaderChunkStrategy:
             else None
         )
 
+    _LEVEL_TO_MARKER = {"H1": "#", "H2": "##", "H3": "###", "H4": "####"}
+
     def split(self, docs: list) -> list[ChunkRecord]:
         full_text = "\n\n".join(d.page_content for d in docs)
         header_docs = self._header_splitter.split_text(full_text)
         if self._secondary:
             header_docs = self._secondary.split_documents(header_docs)
-        return _records_from_docs(header_docs)
+
+        out: list[ChunkRecord] = []
+        for i, d in enumerate(header_docs):
+            header_prefix = "\n".join(
+                f"{self._LEVEL_TO_MARKER[k]} {v}"
+                for k, v in d.metadata.items()
+                if k in self._LEVEL_TO_MARKER
+            )
+            text = d.page_content.strip()
+            if not text:
+                continue
+            if header_prefix:
+                text = f"{header_prefix}\n\n{text}"
+            out.append(ChunkRecord(ordinal=i, text=text, metadata=dict(d.metadata or {})))
+        return out
 
 
 class CharacterChunkStrategy:

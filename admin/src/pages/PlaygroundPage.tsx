@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { IngestApi } from "@/api/endpoints";
 import { Button, Card, Input, Label } from "@/components/ui";
 import { ChunkConfigForm } from "@/components/ChunkConfigForm";
@@ -158,7 +159,7 @@ export default function PlaygroundPage() {
                     </p>
                   )}
                   <div className="prose prose-sm max-w-none overflow-auto rounded border border-gray-100 bg-gray-50 p-4 max-h-[70vh]">
-                    <ReactMarkdown>{result.markdown}</ReactMarkdown>
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{result.markdown}</ReactMarkdown>
                   </div>
                 </Card>
               )}

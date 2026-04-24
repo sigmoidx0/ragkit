@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { DocumentsApi } from "@/api/endpoints";
 import { Badge, Button, Card, Input, Label, formatBytes } from "@/components/ui";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -143,7 +144,7 @@ export default function DocumentDetailPage() {
           )}
           {markdownQuery.data && (
             <div className="prose prose-sm max-w-none overflow-auto rounded border border-gray-100 bg-gray-50 p-4 max-h-[70vh]">
-              <ReactMarkdown>{markdownQuery.data.text}</ReactMarkdown>
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{markdownQuery.data.text}</ReactMarkdown>
             </div>
           )}
         </Card>
