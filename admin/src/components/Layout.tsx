@@ -71,7 +71,7 @@ function CloseIcon() {
 const PAGE_NAMES: Record<string, string> = {
   "/documents": "Documents",
   "/search": "Search",
-  "/chunk-playground": "Chunk Playground",
+  "/playground": "Playground",
   "/members": "Members",
   "/users": "Users",
   "/services": "Services",
@@ -170,7 +170,7 @@ function SidebarContent({
       <nav className="flex-1 space-y-1 px-4 py-6">
         <SidebarNavItem to="/documents" icon={<FileIcon />} label="Documents" onClick={onNavClick} />
         <SidebarNavItem to="/search" icon={<SearchIcon />} label="Search" onClick={onNavClick} />
-        <SidebarNavItem to="/chunk-playground" icon={<BeakerIcon />} label="Chunk Playground" onClick={onNavClick} />
+        <SidebarNavItem to="/playground" icon={<BeakerIcon />} label="Playground" onClick={onNavClick} />
 
         {(isServiceAdmin || isSuperAdmin) && (
           <>

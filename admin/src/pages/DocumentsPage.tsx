@@ -2,12 +2,13 @@ import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { DocumentsApi } from "@/api/endpoints";
+import ReactMarkdown from "react-markdown";
+import { DocumentsApi, IngestApi } from "@/api/endpoints";
 import { Badge, Button, Card, Input, Label, Textarea } from "@/components/ui";
 import { DataTable, type Column } from "@/components/DataTable";
 import { ChunkConfigForm } from "@/components/ChunkConfigForm";
 import { useService } from "@/services/ServiceProvider";
-import type { ChunkConfig, DocumentSummary, DocumentStatus } from "@/api/types";
+import type { ChunkConfig, ChunkPreviewResponse, DocumentSummary, DocumentStatus } from "@/api/types";
 
 function statusTone(s: DocumentStatus): "green" | "amber" | "red" {
   if (s === "indexed") return "green";
@@ -33,9 +34,50 @@ const DOC_COLUMNS: Column<DocumentSummary>[] = [
   { header: "Status", render: (d) => <Badge tone={statusTone(d.status)}>{d.status}</Badge> },
   {
     header: "Created",
-    render: (d) => <span className="text-[#A0AEC0]">{new Date(d.created_at).toLocaleString()}</span>,
+    render: (d) => (
+      <span className="text-[#A0AEC0]">{new Date(d.created_at).toLocaleString()}</span>
+    ),
   },
 ];
+
+function PreviewContent({
+  markdown,
+  isLoading,
+  isError,
+  fileName,
+}: {
+  markdown?: string;
+  isLoading: boolean;
+  isError: boolean;
+  fileName?: string;
+}) {
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-10 text-sm text-[#A0AEC0]">
+        Converting {fileName}…
+      </div>
+    );
+  }
+  if (isError) {
+    return (
+      <div className="flex items-center justify-center py-10 text-sm text-red-400">
+        Failed to convert file.
+      </div>
+    );
+  }
+  if (!markdown) {
+    return (
+      <div className="flex items-center justify-center py-10 text-sm text-[#A0AEC0]">
+        Select a file to preview its content
+      </div>
+    );
+  }
+  return (
+    <div className="prose prose-sm max-w-none p-4">
+      <ReactMarkdown>{markdown}</ReactMarkdown>
+    </div>
+  );
+}
 
 export default function DocumentsPage() {
   const qc = useQueryClient();
@@ -56,6 +98,24 @@ export default function DocumentsPage() {
   const [description, setDescription] = useState("");
   const [chunkConfig, setChunkConfig] = useState<ChunkConfig>({ strategy: "recursive" });
 
+  const previewMutation = useMutation({
+    mutationFn: (f: File) => {
+      const fd = new FormData();
+      fd.set("file", f);
+      return IngestApi.previewChunks(fd);
+    },
+  });
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = e.target.files?.[0] ?? null;
+    setFile(selected);
+    if (selected) {
+      previewMutation.mutate(selected);
+    } else {
+      previewMutation.reset();
+    }
+  };
+
   const createDoc = useMutation({
     mutationFn: (fd: FormData) => DocumentsApi.create(service!.id, fd),
     onSuccess: () => {
@@ -64,6 +124,7 @@ export default function DocumentsPage() {
       setTitle("");
       setDescription("");
       setChunkConfig({ strategy: "recursive" });
+      previewMutation.reset();
       toast.success("Document uploaded successfully");
     },
   });
@@ -100,100 +161,134 @@ export default function DocumentsPage() {
   const items = listQuery.data?.items ?? [];
   const total = listQuery.data?.total ?? 0;
 
+  const previewData = previewMutation.data as ChunkPreviewResponse | undefined;
+  const previewProps = {
+    markdown: previewData?.markdown,
+    isLoading: previewMutation.isPending,
+    isError: previewMutation.isError,
+    fileName: file?.name,
+  };
+
   if (!service) {
     return <div className="text-[#A0AEC0]">No service available.</div>;
   }
 
   return (
-    <div className="space-y-6">
-      <Card className="p-5">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-[#A0AEC0]">Upload</h2>
-          <span className="text-xs text-[#A0AEC0]">{total} total</span>
-        </div>
-        <form onSubmit={onUpload} className="grid gap-4 md:grid-cols-2">
-          <div>
-            <Label htmlFor="title">Title</Label>
-            <Input
-              id="title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              required
-            />
+    <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_0.6fr] lg:gap-6">
+      <div className="space-y-6 lg:self-start">
+        <Card className="p-5">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-[#A0AEC0]">
+              Upload
+            </h2>
+            <span className="text-xs text-[#A0AEC0]">{total} total</span>
           </div>
-          <div>
-            <Label htmlFor="file">File</Label>
-            <Input
-              id="file"
-              type="file"
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-              required
-            />
-          </div>
-          <div className="md:col-span-2">
-            <Label htmlFor="description">Description (optional)</Label>
-            <Textarea
-              id="description"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={2}
-            />
-          </div>
-          <div className="md:col-span-2 rounded-xl border border-gray-100 bg-gray-50 p-4">
-            <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-[#A0AEC0]">
-              Chunking Strategy
-            </p>
-            <ChunkConfigForm value={chunkConfig} onChange={setChunkConfig} />
-          </div>
-          <div className="md:col-span-2">
-            <Button type="submit" disabled={uploading}>
-              {uploading ? "Uploading…" : "Upload"}
-            </Button>
-          </div>
-        </form>
-      </Card>
+          <form onSubmit={onUpload} className="grid gap-4 md:grid-cols-2">
+            <div>
+              <Label htmlFor="title">Title</Label>
+              <Input
+                id="title"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                required
+              />
+            </div>
+            <div>
+              <Label htmlFor="file">File</Label>
+              <Input id="file" type="file" onChange={handleFileChange} required />
+            </div>
+            <div className="md:col-span-2">
+              <Label htmlFor="description">Description (optional)</Label>
+              <Textarea
+                id="description"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                rows={2}
+              />
+            </div>
+            <div className="md:col-span-2 rounded-xl border border-gray-100 bg-gray-50 p-4">
+              <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-[#A0AEC0]">
+                Chunking Strategy
+              </p>
+              <ChunkConfigForm value={chunkConfig} onChange={setChunkConfig} />
+            </div>
+            <div className="md:col-span-2">
+              <Button type="submit" disabled={uploading}>
+                {uploading ? "Uploading…" : "Upload"}
+              </Button>
+            </div>
+          </form>
+        </Card>
 
-      <Card>
-        <div className="flex items-center justify-between gap-3 border-b border-gray-100 p-4">
-          <Input
-            placeholder="Filter by title…"
-            value={q}
-            onChange={(e) => {
-              setQ(e.target.value);
-              setOffset(0);
-            }}
-            className="max-w-sm"
-          />
-          <div className="flex items-center gap-2 text-sm text-[#A0AEC0]">
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={offset === 0}
-              onClick={() => setOffset(Math.max(0, offset - limit))}
-            >
-              Previous
-            </Button>
-            <span>
-              {offset + 1}–{Math.min(offset + items.length, total)}
-            </span>
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={offset + items.length >= total}
-              onClick={() => setOffset(offset + limit)}
-            >
-              Next
-            </Button>
+        {/* Mobile-only preview: shown between upload form and list */}
+        {(file || previewMutation.isPending) && (
+          <Card className="overflow-hidden lg:hidden">
+            <div className="border-b border-gray-100 px-4 py-3">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-[#A0AEC0]">
+                Preview
+              </h2>
+            </div>
+            <div className="max-h-72 overflow-y-auto">
+              <PreviewContent {...previewProps} />
+            </div>
+          </Card>
+        )}
+
+        <Card>
+          <div className="flex items-center justify-between gap-3 border-b border-gray-100 p-4">
+            <Input
+              placeholder="Filter by title…"
+              value={q}
+              onChange={(e) => {
+                setQ(e.target.value);
+                setOffset(0);
+              }}
+              className="max-w-sm"
+            />
+            <div className="flex items-center gap-2 text-sm text-[#A0AEC0]">
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={offset === 0}
+                onClick={() => setOffset(Math.max(0, offset - limit))}
+              >
+                Previous
+              </Button>
+              <span>
+                {offset + 1}–{Math.min(offset + items.length, total)}
+              </span>
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={offset + items.length >= total}
+                onClick={() => setOffset(offset + limit)}
+              >
+                Next
+              </Button>
+            </div>
           </div>
-        </div>
-        <DataTable<DocumentSummary>
-          columns={DOC_COLUMNS}
-          rows={items}
-          rowKey={(d) => d.id}
-          isLoading={listQuery.isLoading}
-          emptyMessage="No documents yet."
-        />
-      </Card>
+          <DataTable<DocumentSummary>
+            columns={DOC_COLUMNS}
+            rows={items}
+            rowKey={(d) => d.id}
+            isLoading={listQuery.isLoading}
+            emptyMessage="No documents yet."
+          />
+        </Card>
+      </div>
+
+      <div className="hidden lg:flex lg:flex-col lg:overflow-hidden">
+        <Card className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <div className="shrink-0 border-b border-gray-100 px-4 py-3">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-[#A0AEC0]">
+                Preview
+              </h2>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <PreviewContent {...previewProps} />
+            </div>
+        </Card>
+      </div>
     </div>
   );
 }

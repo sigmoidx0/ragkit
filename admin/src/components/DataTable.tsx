@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import { cn } from "@/lib/cn";
 
 export interface Column<T> {
@@ -14,6 +14,8 @@ interface DataTableProps<T> {
   isLoading?: boolean;
   emptyMessage?: string;
   onRowClick?: (row: T) => void;
+  selectedRowKey?: string | number;
+  renderExpanded?: (row: T) => ReactNode;
 }
 
 export function DataTable<T>({
@@ -23,6 +25,8 @@ export function DataTable<T>({
   isLoading,
   emptyMessage = "No data.",
   onRowClick,
+  selectedRowKey,
+  renderExpanded,
 }: DataTableProps<T>) {
   const colSpan = columns.length;
 
@@ -54,22 +58,35 @@ export function DataTable<T>({
             </tr>
           )}
           {!isLoading &&
-            rows.map((row) => (
-              <tr
-                key={rowKey(row)}
-                className={cn(
-                  "border-t border-gray-100 transition-colors hover:bg-gray-50",
-                  onRowClick && "cursor-pointer",
-                )}
-                onClick={() => onRowClick?.(row)}
-              >
-                {columns.map((col) => (
-                  <td key={col.header} className={cn("px-4 py-3", col.className)}>
-                    {col.render(row)}
-                  </td>
-                ))}
-              </tr>
-            ))}
+            rows.map((row) => {
+              const key = rowKey(row);
+              const isSelected = selectedRowKey !== undefined && key === selectedRowKey;
+              return (
+                <Fragment key={key}>
+                  <tr
+                    className={cn(
+                      "border-t border-gray-100 transition-colors hover:bg-gray-50",
+                      onRowClick && "cursor-pointer",
+                      isSelected && "bg-teal-50",
+                    )}
+                    onClick={() => onRowClick?.(row)}
+                  >
+                    {columns.map((col) => (
+                      <td key={col.header} className={cn("px-4 py-3", col.className)}>
+                        {col.render(row)}
+                      </td>
+                    ))}
+                  </tr>
+                  {isSelected && renderExpanded && (
+                    <tr className="border-t border-gray-100 lg:hidden">
+                      <td colSpan={colSpan} className="p-0">
+                        {renderExpanded(row)}
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}
         </tbody>
       </table>
     </div>

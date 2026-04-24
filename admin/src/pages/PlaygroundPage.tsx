@@ -42,7 +42,7 @@ function ChunkCard({ chunk, index }: { chunk: ChunkPreviewChunk; index: number }
   );
 }
 
-export default function ChunkPlaygroundPage() {
+export default function PlaygroundPage() {
   const [file, setFile] = useState<File | null>(null);
   const [chunkConfig, setChunkConfig] = useState<ChunkConfig>({ strategy: "recursive" });
   const [result, setResult] = useState<ChunkPreviewResponse | null>(null);
@@ -77,7 +77,7 @@ export default function ChunkPlaygroundPage() {
         {/* ── Config panel ─────────────────────────────── */}
         <Card className="h-fit p-5 lg:sticky lg:top-6">
           <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-[#A0AEC0]">
-            Chunk Playground
+            Playground
           </h2>
           <form onSubmit={onSubmit} className="space-y-4">
             <div>
