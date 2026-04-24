@@ -1,7 +1,17 @@
 server:
-  upload_dir: ./data/uploads
   cors_origins:
     - http://localhost:5173
+
+storage:
+  kind: local
+  upload_dir: ./data/uploads
+  # To switch to S3 (or MinIO), set kind: s3 and fill in the s3 block,
+  # or provide the equivalent environment variables (see .env.example).
+  # s3:
+  #   bucket: my-ragkit-bucket
+  #   prefix: ""           # optional key prefix within the bucket
+  #   region: us-east-1
+  #   endpoint_url: ""     # set for MinIO / custom S3-compatible stores
 
 db:
   url: sqlite:///./data/ragkit.db

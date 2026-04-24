@@ -16,9 +16,19 @@ from dotenv import dotenv_values
 from pydantic import BaseModel, Field
 
 
+class S3Section(BaseModel):
+    bucket: str = ""
+    prefix: str = ""
+    region: str | None = None
+    endpoint_url: str | None = None
+    access_key_id: str | None = None
+    secret_access_key: str | None = None
+
+
 class StorageSection(BaseModel):
-    kind: Literal["local"] = "local"
+    kind: Literal["local", "s3"] = "local"
     upload_dir: str = "./data/uploads"
+    s3: S3Section = Field(default_factory=S3Section)
 
 
 class ServerSection(BaseModel):
@@ -151,6 +161,22 @@ def _apply_env_overrides(raw: dict[str, Any]) -> dict[str, Any]:
     emb_key = os.getenv("EMBEDDING_API_KEY")
     if emb_key:
         raw.setdefault("embeddings", {})["api_key"] = emb_key
+
+    s3_bucket = os.getenv("S3_BUCKET")
+    if s3_bucket:
+        raw.setdefault("storage", {}).setdefault("s3", {})["bucket"] = s3_bucket
+    s3_endpoint = os.getenv("S3_ENDPOINT_URL")
+    if s3_endpoint:
+        raw.setdefault("storage", {}).setdefault("s3", {})["endpoint_url"] = s3_endpoint
+    s3_key = os.getenv("AWS_ACCESS_KEY_ID")
+    if s3_key:
+        raw.setdefault("storage", {}).setdefault("s3", {})["access_key_id"] = s3_key
+    s3_secret = os.getenv("AWS_SECRET_ACCESS_KEY")
+    if s3_secret:
+        raw.setdefault("storage", {}).setdefault("s3", {})["secret_access_key"] = s3_secret
+    s3_region = os.getenv("AWS_DEFAULT_REGION")
+    if s3_region:
+        raw.setdefault("storage", {}).setdefault("s3", {})["region"] = s3_region
 
     return raw
 

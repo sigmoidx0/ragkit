@@ -6,7 +6,7 @@ from collections.abc import Iterator
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -176,7 +176,9 @@ def preview_text(service_id: int, document_id: int, db: DbDep, _membership: Serv
 
 
 @router.get("/{document_id}/file")
-def download_file(service_id: int, document_id: int, db: DbDep, _membership: ServiceMemberDep) -> FileResponse:
+def download_file(
+    service_id: int, document_id: int, db: DbDep, _membership: ServiceMemberDep
+) -> Response:
     document = db.execute(
         select(Document).where(Document.id == document_id, Document.service_id == service_id)
     ).scalar_one_or_none()
@@ -185,10 +187,16 @@ def download_file(service_id: int, document_id: int, db: DbDep, _membership: Ser
     storage = get_storage()
     try:
         abs_path = storage.absolute(document.file_path)
+        if not abs_path.exists():
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "file missing on disk")
+        return FileResponse(str(abs_path), filename=document.source_filename)
     except NotImplementedError:
-        raise HTTPException(status.HTTP_501_NOT_IMPLEMENTED, "file download not supported for this storage backend")
+        pass
     except ValueError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
-    if not abs_path.exists():
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "file missing on disk")
-    return FileResponse(str(abs_path), filename=document.source_filename)
+
+    url = storage.presigned_url(document.file_path)
+    if url:
+        return RedirectResponse(url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+
+    raise HTTPException(status.HTTP_501_NOT_IMPLEMENTED, "file download not supported for this storage backend")

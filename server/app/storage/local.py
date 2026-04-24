@@ -71,3 +71,6 @@ class LocalStorage:
     def absolute(self, stored_path: str) -> Path:
         """Direct path access — only for endpoints that serve files (e.g. FileResponse)."""
         return self._abs(stored_path)
+
+    def presigned_url(self, stored_path: str, expires_in: int = 3600) -> str | None:
+        return None

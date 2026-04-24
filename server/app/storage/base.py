@@ -34,6 +34,10 @@ class StorageBackend(Protocol):
         """Return an absolute local Path for direct file serving (e.g. FileResponse).
 
         Raise NotImplementedError for backends that do not support direct path access
-        (e.g. S3). Callers should catch this and return HTTP 501.
+        (e.g. S3). Callers should fall back to presigned_url().
         """
+        ...
+
+    def presigned_url(self, stored_path: str, expires_in: int = 3600) -> str | None:
+        """Return a time-limited download URL, or None if not supported by this backend."""
         ...
