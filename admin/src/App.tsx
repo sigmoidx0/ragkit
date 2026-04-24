@@ -10,6 +10,7 @@ import SearchPage from "./pages/SearchPage";
 import ServicesPage from "./pages/ServicesPage";
 import MembersPage from "./pages/MembersPage";
 import UsersPage from "./pages/UsersPage";
+import ChunkPlaygroundPage from "./pages/ChunkPlaygroundPage";
 
 export default function App() {
   return (
@@ -33,6 +34,7 @@ export default function App() {
         <Route path="/services" element={<ServicesPage />} />
         <Route path="/members" element={<MembersPage />} />
         <Route path="/users" element={<UsersPage />} />
+        <Route path="/chunk-playground" element={<ChunkPlaygroundPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

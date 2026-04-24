@@ -2,21 +2,25 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse, RedirectResponse, Response
+from pydantic import TypeAdapter, ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import DbDep, ServiceAdminDep, ServiceMemberDep, ServiceWriterDep
 from app.db.models import Document, DocumentStatus, Service
 from app.ingest.loaders import guess_mime_type, convert_to_documents
-from app.schemas.documents import DocumentListResponse, DocumentOut
+from app.schemas.documents import AnyChunkConfig, DocumentListResponse, DocumentOut
 from app.services.documents import delete_document, delete_document_dir, save_document_file
 from app.services.indexing import index_document, clear_document_index
 from app.storage import get_storage
+
+_chunk_config_adapter = TypeAdapter(AnyChunkConfig)
 
 router = APIRouter(prefix="/services/{service_id}/documents", tags=["documents"])
 
@@ -71,11 +75,14 @@ def create_document(
     file: UploadFile = File(...),
     title: str = Form(...),
     description: str | None = Form(None),
+    chunk_config: str | None = Form(None),
 ) -> DocumentOut:
     if not db.get(Service, service_id):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "service not found")
     if not file.filename:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "file is required")
+
+    parsed_chunk_config = _parse_chunk_config(chunk_config)
 
     document = Document(
         service_id=service_id,
@@ -87,6 +94,7 @@ def create_document(
         size_bytes=0,
         sha256="",
         status=DocumentStatus.pending,
+        chunk_config=parsed_chunk_config,
     )
     db.add(document)
     db.flush()
@@ -121,6 +129,7 @@ def replace_document(
     _writer: ServiceWriterDep,
     db: TxDbDep,
     file: UploadFile = File(...),
+    chunk_config: str | None = Form(None),
 ) -> DocumentOut:
     document = db.execute(
         select(Document).where(Document.id == document_id, Document.service_id == service_id)
@@ -133,7 +142,9 @@ def replace_document(
     clear_document_index(document)
     delete_document_dir(document_id)
 
+    parsed_chunk_config = _parse_chunk_config(chunk_config)
     save_document_file(document, file.file, file.filename, file.content_type)
+    document.chunk_config = parsed_chunk_config
     document.status = DocumentStatus.pending
     document.error = None
     db.flush()
@@ -200,3 +211,17 @@ def download_file(
         return RedirectResponse(url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
 
     raise HTTPException(status.HTTP_501_NOT_IMPLEMENTED, "file download not supported for this storage backend")
+
+
+def _parse_chunk_config(raw: str | None) -> dict | None:
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"chunk_config is not valid JSON: {e}") from e
+    try:
+        validated = _chunk_config_adapter.validate_python(data)
+        return validated.model_dump(exclude_none=True)
+    except ValidationError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"invalid chunk_config: {e}") from e

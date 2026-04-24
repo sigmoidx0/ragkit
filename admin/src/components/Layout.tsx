@@ -44,6 +44,14 @@ function GearIcon() {
   );
 }
 
+function BeakerIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className="h-full w-full">
+      <path d="M14.5 2.5v6.5l4.5 8H5L9.5 9V2.5h5zm1-1.5H8.5v1H5v1.5h14V2H14.5V1zM5.09 15h13.82L16 9.5V3h-1.5v6.5L17 15H7L9.5 9.5V3H8v6.5L5.09 15z" />
+    </svg>
+  );
+}
+
 function HamburgerIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5">
@@ -63,6 +71,7 @@ function CloseIcon() {
 const PAGE_NAMES: Record<string, string> = {
   "/documents": "Documents",
   "/search": "Search",
+  "/chunk-playground": "Chunk Playground",
   "/members": "Members",
   "/users": "Users",
   "/services": "Services",
@@ -161,6 +170,7 @@ function SidebarContent({
       <nav className="flex-1 space-y-1 px-4 py-6">
         <SidebarNavItem to="/documents" icon={<FileIcon />} label="Documents" onClick={onNavClick} />
         <SidebarNavItem to="/search" icon={<SearchIcon />} label="Search" onClick={onNavClick} />
+        <SidebarNavItem to="/chunk-playground" icon={<BeakerIcon />} label="Chunk Playground" onClick={onNavClick} />
 
         {(isServiceAdmin || isSuperAdmin) && (
           <>

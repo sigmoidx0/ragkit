@@ -5,8 +5,9 @@ import { toast } from "sonner";
 import { DocumentsApi } from "@/api/endpoints";
 import { Badge, Button, Card, Input, Label, Textarea } from "@/components/ui";
 import { DataTable, type Column } from "@/components/DataTable";
+import { ChunkConfigForm } from "@/components/ChunkConfigForm";
 import { useService } from "@/services/ServiceProvider";
-import type { DocumentSummary, DocumentStatus } from "@/api/types";
+import type { ChunkConfig, DocumentSummary, DocumentStatus } from "@/api/types";
 
 function statusTone(s: DocumentStatus): "green" | "amber" | "red" {
   if (s === "indexed") return "green";
@@ -53,6 +54,7 @@ export default function DocumentsPage() {
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [chunkConfig, setChunkConfig] = useState<ChunkConfig>({ strategy: "recursive" });
 
   const createDoc = useMutation({
     mutationFn: (fd: FormData) => DocumentsApi.create(service!.id, fd),
@@ -61,6 +63,7 @@ export default function DocumentsPage() {
       setFile(null);
       setTitle("");
       setDescription("");
+      setChunkConfig({ strategy: "recursive" });
       toast.success("Document uploaded successfully");
     },
   });
@@ -85,6 +88,7 @@ export default function DocumentsPage() {
       fd.set("file", file);
       fd.set("title", title);
       if (description) fd.set("description", description);
+      fd.set("chunk_config", JSON.stringify(chunkConfig));
       await createDoc.mutateAsync(fd);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Upload failed");
@@ -134,6 +138,12 @@ export default function DocumentsPage() {
               onChange={(e) => setDescription(e.target.value)}
               rows={2}
             />
+          </div>
+          <div className="md:col-span-2 rounded-xl border border-gray-100 bg-gray-50 p-4">
+            <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-[#A0AEC0]">
+              Chunking Strategy
+            </p>
+            <ChunkConfigForm value={chunkConfig} onChange={setChunkConfig} />
           </div>
           <div className="md:col-span-2">
             <Button type="submit" disabled={uploading}>

@@ -1,5 +1,6 @@
 import { apiFetch } from "./client";
 import type {
+  ChunkPreviewResponse,
   DocumentListResponse,
   DocumentSummary,
   SearchResponse,
@@ -58,6 +59,11 @@ export const DocumentsApi = {
   fileUrl: (serviceId: number, id: number) => `/api/services/${serviceId}/documents/${id}/file`,
   previewText: (serviceId: number, id: number) =>
     apiFetch<{ text: string }>(`/services/${serviceId}/documents/${id}/preview-text`),
+};
+
+export const IngestApi = {
+  previewChunks: (fd: FormData) =>
+    apiFetch<ChunkPreviewResponse>("/ingest/preview-chunks", { formData: fd }),
 };
 
 export const UsersApi = {

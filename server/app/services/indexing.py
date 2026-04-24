@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import Document, DocumentStatus
 from app.embeddings import get_embedder
-from app.ingest import default_chunk_strategy
+from app.ingest import chunk_strategy_from_config
 from app.vectorstore import get_vectorstore
 
 logger = logging.getLogger(__name__)
@@ -34,7 +34,7 @@ def index_document(db: Session, document: Document, docs: list) -> None:
     try:
         document.status = DocumentStatus.chunking
         db.flush()
-        chunks = default_chunk_strategy().split(docs)
+        chunks = chunk_strategy_from_config(document.chunk_config).split(docs)
         if not chunks:
             raise RuntimeError("no text extracted from file")
 

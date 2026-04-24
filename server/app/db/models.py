@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import enum
 
-from sqlalchemy import BigInteger, Enum, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, BigInteger, Enum, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
+from typing import Any
 
 from app.db.base import Base, TimestampMixin
 
@@ -77,3 +78,4 @@ class Document(TimestampMixin, Base):
         default=DocumentStatus.pending,
     )
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    chunk_config: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)

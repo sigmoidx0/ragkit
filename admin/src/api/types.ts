@@ -14,6 +14,57 @@ export interface TokenResponse {
 
 export type DocumentStatus = "pending" | "chunking" | "embedding" | "indexed" | "failed";
 
+// ---------------------------------------------------------------------------
+// Chunk config
+// ---------------------------------------------------------------------------
+
+export interface RecursiveChunkConfig {
+  strategy: "recursive";
+  chunk_size?: number;
+  chunk_overlap?: number;
+}
+
+export interface MarkdownHeaderChunkConfig {
+  strategy: "markdown_header";
+  headers_to_split_on?: string[];
+  chunk_size?: number;
+  chunk_overlap?: number;
+}
+
+export interface CharacterChunkConfig {
+  strategy: "character";
+  separator?: string;
+  chunk_size?: number;
+  chunk_overlap?: number;
+}
+
+export interface TokenChunkConfig {
+  strategy: "token";
+  chunk_size?: number;
+  chunk_overlap?: number;
+  encoding_name?: string;
+}
+
+export type ChunkConfig =
+  | RecursiveChunkConfig
+  | MarkdownHeaderChunkConfig
+  | CharacterChunkConfig
+  | TokenChunkConfig;
+
+export interface ChunkPreviewChunk {
+  ordinal: number;
+  text: string;
+  char_count: number;
+  metadata: Record<string, unknown>;
+}
+
+export interface ChunkPreviewResponse {
+  markdown: string;
+  markdown_truncated: boolean;
+  chunks: ChunkPreviewChunk[];
+  total_chunks: number;
+}
+
 export type ServiceRole = "admin" | "member" | "viewer";
 
 export interface Service {
@@ -47,6 +98,7 @@ export interface DocumentSummary {
   sha256: string;
   status: DocumentStatus;
   error: string | null;
+  chunk_config: ChunkConfig | null;
   created_at: string;
   updated_at: string;
 }
