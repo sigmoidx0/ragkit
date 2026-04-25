@@ -68,11 +68,13 @@ npm run dev
 
 비밀이 아닌 설정은 `server/config.yaml`에서 관리합니다:
 
-- `server.upload_dir` — 업로드 파일 저장 경로 (`server/` 기준 상대 경로)
+- `storage.kind` — `local`(기본) 또는 `s3`
+- `storage.upload_dir` — 로컬 저장 경로 (`storage.kind: local` 시, `server/` 기준 상대 경로)
+- `storage.s3.*` — S3 버킷, prefix, region, endpoint_url (MinIO 등 호환 스토리지 포함)
 - `db.url` — 기본값 SQLite; `DATABASE_URL` 환경변수로 덮어씀
 - `vectorstore` — Qdrant URL, 컬렉션명, 벡터 차원, 거리 함수
 - `embeddings.provider` — `ollama`(기본), `tei`, `vllm`, `azure_openai` 중 선택
-- `ingest.chunk_size` / `chunk_overlap` — 텍스트 분할 파라미터
+- `ingest.chunk_size` / `chunk_overlap` — 전역 기본 텍스트 분할 파라미터 (문서별 전략으로 재정의 가능)
 - `search.default_top_k` / `max_top_k`
 - `jwt.algorithm` / `access_token_ttl_minutes`
 - `admin_bootstrap.email` / `password_env`
@@ -87,6 +89,11 @@ npm run dev
 | `EMBEDDING_API_KEY`       | 임베딩 제공자 인증 (TEI / vLLM / Azure OpenAI)            |
 | `INITIAL_ADMIN_PASSWORD`  | 첫 번째 관리자 계정 비밀번호                              |
 | `MCP_SERVICE_TOKEN`       | MCP 어댑터가 REST 서버를 호출할 때 사용하는 공유 토큰     |
+| `AWS_ACCESS_KEY_ID`       | S3 자격증명 (IAM 역할·프로파일로 대체 가능)               |
+| `AWS_SECRET_ACCESS_KEY`   | S3 자격증명                                               |
+| `AWS_DEFAULT_REGION`      | S3 리전                                                   |
+| `S3_BUCKET`               | 버킷 이름 (`storage.kind: s3` 시 필수)                    |
+| `S3_ENDPOINT_URL`         | MinIO 등 커스텀 엔드포인트 URL                            |
 
 ## MCP 도구
 

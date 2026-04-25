@@ -11,8 +11,9 @@ ragkit is a RAG platform for uploading documents and searching them with natural
 3. [Document List and Status](#3-document-list-and-status)
 4. [Document Detail and Management](#4-document-detail-and-management)
 5. [Search](#5-search)
-6. [Document Status Reference](#6-document-status-reference)
-7. [Supported File Formats](#7-supported-file-formats)
+6. [Chunk Playground](#6-chunk-playground)
+7. [Document Status Reference](#7-document-status-reference)
+8. [Supported File Formats](#8-supported-file-formats)
 
 ---
 
@@ -31,8 +32,22 @@ Use the Upload form at the top of the **Documents** page.
 | Title | A name to identify the document (required) |
 | File | The file to upload (required) |
 | Description | Additional notes about the document (optional) |
+| Chunking Strategy | How the text is split into chunks (optional, default: Recursive) |
 
 Click **Upload** to start processing: the file is saved, text is extracted, embeddings are generated, and vectors are stored. A success notification appears in the top-right corner when complete.
+
+### Chunking Strategies
+
+Each document can use a different chunking strategy.
+
+| Strategy | Best for |
+| -------- | -------- |
+| Recursive (default) | General-purpose use across most file types |
+| Markdown Header | `.md` files — splits on H1–H4 headers |
+| Character | Splitting on a specific separator (e.g. `\n\n`) |
+| Token (tiktoken) | Controlling chunk size by token count for LLM context windows |
+
+Use the **Chunk Playground** to test how a strategy will split your file before uploading.
 
 > **When upload fails**
 > - If the embedding service (Ollama) is not running, an error notification is shown. Start Ollama and try again.
@@ -87,7 +102,18 @@ Results are shown as text chunks with a relevance score. Click the document titl
 
 ---
 
-## 6. Document Status Reference
+## 6. Chunk Playground
+
+The **Chunk Playground** in the sidebar lets you preview how a file will be split without uploading it.
+
+1. Select a file.
+2. Choose a chunking strategy and adjust the parameters.
+3. Click **Preview Chunks** to see the resulting chunks, including character count and metadata for each.
+4. Switch to the **Markdown** tab to inspect the raw extracted text.
+
+---
+
+## 7. Document Status Reference
 
 | Status | Meaning |
 | ------ | ------- |
@@ -99,7 +125,7 @@ Results are shown as text chunks with a relevance score. Click the document titl
 
 ---
 
-## 7. Supported File Formats
+## 8. Supported File Formats
 
 | Format | Extensions |
 | ------ | ---------- |
