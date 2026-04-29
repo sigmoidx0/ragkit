@@ -15,8 +15,8 @@ const BTN_VARIANT: Record<ButtonVariant, string> = {
   primary:
     "bg-teal-400 text-white hover:bg-teal-500 disabled:bg-teal-200",
   secondary:
-    "bg-white text-[#2D3748] border border-gray-200 hover:bg-gray-50 shadow-sm disabled:text-gray-400",
-  ghost: "bg-transparent hover:bg-gray-100 text-[#2D3748]",
+    "bg-white text-[#2D3748] border border-gray-200 hover:bg-gray-50 shadow-sm disabled:text-gray-400 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-600",
+  ghost: "bg-transparent hover:bg-gray-100 text-[#2D3748] dark:hover:bg-gray-700 dark:text-gray-100",
   danger: "bg-red-500 text-white hover:bg-red-600 disabled:bg-red-300",
 };
 
@@ -49,6 +49,7 @@ export function Input({ className, ...rest }: InputHTMLAttributes<HTMLInputEleme
       {...rest}
       className={cn(
         "block w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-[#2D3748] placeholder:text-[#A0AEC0] shadow-sm focus:border-teal-300 focus:outline-none focus:ring-2 focus:ring-teal-100 disabled:bg-gray-50",
+        "dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder:text-gray-500 dark:focus:border-teal-400 dark:focus:ring-teal-900/40 dark:disabled:bg-gray-800",
         className,
       )}
     />
@@ -64,6 +65,7 @@ export function Textarea({
       {...rest}
       className={cn(
         "block w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-[#2D3748] placeholder:text-[#A0AEC0] shadow-sm focus:border-teal-300 focus:outline-none focus:ring-2 focus:ring-teal-100",
+        "dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder:text-gray-500 dark:focus:border-teal-400 dark:focus:ring-teal-900/40",
         className,
       )}
     />
@@ -80,6 +82,7 @@ export function Select({
       {...rest}
       className={cn(
         "block w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-[#2D3748] shadow-sm focus:border-teal-300 focus:outline-none focus:ring-2 focus:ring-teal-100",
+        "dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:focus:border-teal-400 dark:focus:ring-teal-900/40",
         className,
       )}
     >
@@ -100,7 +103,7 @@ export function Label({
   return (
     <label
       htmlFor={htmlFor}
-      className={cn("mb-1 block text-xs font-semibold text-[#2D3748]", className)}
+      className={cn("mb-1 block text-xs font-semibold text-[#2D3748] dark:text-gray-200", className)}
     >
       {children}
     </label>
@@ -117,7 +120,7 @@ export function Card({
   return (
     <div
       className={cn(
-        "rounded-2xl border border-gray-100 bg-white shadow-md",
+        "rounded-2xl border border-gray-100 bg-white shadow-md dark:border-gray-700 dark:bg-gray-800",
         className,
       )}
     >
@@ -134,11 +137,11 @@ export function Badge({
   tone?: "slate" | "green" | "red" | "amber" | "blue";
 }) {
   const tones: Record<string, string> = {
-    slate: "bg-gray-100 text-gray-600",
-    green: "bg-teal-50 text-teal-700",
-    red: "bg-red-50 text-red-600",
-    amber: "bg-amber-50 text-amber-700",
-    blue: "bg-blue-50 text-blue-700",
+    slate: "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300",
+    green: "bg-teal-50 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300",
+    red: "bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-400",
+    amber: "bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
+    blue: "bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
   };
   return (
     <span
@@ -155,7 +158,7 @@ export function Badge({
 export function ErrorBox({ message }: { message: string }) {
   if (!message) return null;
   return (
-    <div className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-600">
+    <div className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-600 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-400">
       {message}
     </div>
   );

@@ -99,6 +99,7 @@ export interface DocumentSummary {
   status: DocumentStatus;
   error: string | null;
   chunk_config: ChunkConfig | null;
+  embedding_model: string | null;
   created_at: string;
   updated_at: string;
 }

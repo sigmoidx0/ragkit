@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "@/auth/AuthProvider";
 import { useService } from "@/services/ServiceProvider";
+import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/cn";
 
 function FileIcon() {
@@ -68,6 +69,22 @@ function CloseIcon() {
   );
 }
 
+function SunIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4">
+      <path d="M12 7c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5zM2 13h2c.55 0 1-.45 1-1s-.45-1-1-1H2c-.55 0-1 .45-1 1s.45 1 1 1zm18 0h2c.55 0 1-.45 1-1s-.45-1-1-1h-2c-.55 0-1 .45-1 1s.45 1 1 1zM11 2v2c0 .55.45 1 1 1s1-.45 1-1V2c0-.55-.45-1-1-1s-1 .45-1 1zm0 18v2c0 .55.45 1 1 1s1-.45 1-1v-2c0-.55-.45-1-1-1s-1 .45-1 1zM5.99 4.58c-.39-.39-1.03-.39-1.41 0-.39.39-.39 1.03 0 1.41l1.06 1.06c.39.39 1.03.39 1.41 0 .38-.39.39-1.03 0-1.41L5.99 4.58zm12.37 12.37c-.39-.39-1.03-.39-1.41 0-.39.39-.39 1.03 0 1.41l1.06 1.06c.39.39 1.03.39 1.41 0 .39-.38.39-1.02 0-1.41l-1.06-1.06zm1.06-12.37l-1.06 1.06c-.39.39-.39 1.03 0 1.41.39.39 1.03.39 1.41 0l1.06-1.06c.39-.39.39-1.03 0-1.41-.38-.39-1.02-.39-1.41 0zM7.05 18.36l-1.06 1.06c-.39.39-.39 1.03 0 1.41.39.39 1.03.39 1.41 0l1.06-1.06c.39-.39.39-1.03 0-1.41-.39-.38-1.03-.39-1.41 0z" />
+    </svg>
+  );
+}
+
+function MoonIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4">
+      <path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9c0-.46-.04-.92-.1-1.36-.98 1.37-2.58 2.26-4.4 2.26-2.98 0-5.4-2.42-5.4-5.4 0-1.81.89-3.42 2.26-4.4-.44-.06-.9-.1-1.36-.1z" />
+    </svg>
+  );
+}
+
 const PAGE_NAMES: Record<string, string> = {
   "/documents": "Documents",
   "/search": "Search",
@@ -94,19 +111,19 @@ function SidebarNavItem({
         <div
           className={cn(
             "flex items-center gap-3 rounded-2xl px-2 py-3 transition-all",
-            isActive && "bg-white shadow-sm",
+            isActive && "bg-white shadow-sm dark:bg-gray-700",
           )}
         >
           <div
             className={cn(
               "flex h-[30px] w-[30px] flex-shrink-0 items-center justify-center rounded-xl shadow-sm",
-              isActive ? "bg-teal-300" : "bg-white",
+              isActive ? "bg-teal-300" : "bg-white dark:bg-gray-600",
             )}
           >
             <span
               className={cn(
                 "flex h-[15px] w-[15px] items-center justify-center",
-                isActive ? "text-white" : "text-gray-400",
+                isActive ? "text-white" : "text-gray-400 dark:text-gray-300",
               )}
             >
               {icon}
@@ -115,7 +132,7 @@ function SidebarNavItem({
           <span
             className={cn(
               "text-xs font-bold",
-              isActive ? "text-[#2D3748]" : "text-[#A0AEC0]",
+              isActive ? "text-[#2D3748] dark:text-gray-100" : "text-[#A0AEC0] dark:text-gray-400",
             )}
           >
             {label}
@@ -142,7 +159,7 @@ function SidebarContent({
   onNavClick?: () => void;
 }) {
   return (
-    <div className="flex h-full flex-col bg-white">
+    <div className="flex h-full flex-col bg-white dark:bg-gray-800">
       {/* Logo */}
       <Link
         to="/"
@@ -154,17 +171,11 @@ function SidebarContent({
             <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z" />
           </svg>
         </div>
-        <span className="text-sm font-bold text-[#2D3748]">RAGKIT ADMIN</span>
+        <span className="text-sm font-bold text-[#2D3748] dark:text-gray-100">RAGKIT ADMIN</span>
       </Link>
 
       {/* Divider */}
-      <div
-        className="mx-6 h-px"
-        style={{
-          background:
-            "linear-gradient(90deg, rgba(224,225,226,0) 0%, rgba(224,225,226,1) 50%, rgba(224,225,226,0.16) 100%)",
-        }}
-      />
+      <div className="mx-6 h-px bg-gray-200 dark:bg-gray-700" />
 
       {/* Nav */}
       <nav className="flex-1 space-y-1 px-4 py-6">
@@ -175,7 +186,7 @@ function SidebarContent({
         {(isServiceAdmin || isSuperAdmin) && (
           <>
             <div className="px-2 pb-1 pt-5">
-              <span className="text-[10px] font-bold tracking-widest text-[#2D3748]">
+              <span className="text-[10px] font-bold tracking-widest text-[#2D3748] dark:text-gray-400">
                 MANAGEMENT
               </span>
             </div>
@@ -216,6 +227,7 @@ function SidebarContent({
 export default function Layout() {
   const { user, logout } = useAuth();
   const { services, current, select } = useService();
+  const { theme, toggle } = useTheme();
   const location = useLocation();
   const [drawerOpen, setDrawerOpen] = useState(false);
 
@@ -234,7 +246,7 @@ export default function Layout() {
   };
 
   return (
-    <div className="flex min-h-screen bg-[#F8F9FA]">
+    <div className="flex min-h-screen bg-[#F8F9FA] dark:bg-gray-900">
       {/* Desktop sidebar */}
       <aside className="hidden w-[260px] flex-shrink-0 md:block">
         <div className="sticky top-0 h-screen">
@@ -270,40 +282,51 @@ export default function Layout() {
           <div className="flex items-center gap-3">
             {/* Hamburger (mobile only) */}
             <button
-              className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-[#2D3748] shadow-sm md:hidden"
+              className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-[#2D3748] shadow-sm dark:bg-gray-700 dark:text-gray-100 md:hidden"
               onClick={() => setDrawerOpen(true)}
             >
               <HamburgerIcon />
             </button>
             <div>
               <p className="text-xs text-[#A0AEC0]">Pages / {pageName}</p>
-              <h1 className="text-lg font-bold text-[#2D3748] md:text-xl">{pageName}</h1>
+              <h1 className="text-lg font-bold text-[#2D3748] dark:text-gray-100 md:text-xl">{pageName}</h1>
             </div>
           </div>
 
-          {services.length > 0 && (
-            <div className="flex items-center gap-2">
-              <select
-                value={current?.id ?? ""}
-                onChange={(e) => {
-                  const svc = services.find((s) => s.id === Number(e.target.value));
-                  if (svc) select(svc);
-                }}
-                className="rounded-xl border border-gray-200 bg-white px-2 py-2 text-xs font-medium text-[#2D3748] shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-300 md:px-3"
-              >
-                {services.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
-              {current && (
-                <span className="hidden rounded-lg bg-teal-50 px-2 py-1 text-xs font-semibold capitalize text-teal-600 sm:inline">
-                  {current.role}
-                </span>
-              )}
-            </div>
-          )}
+          <div className="flex items-center gap-2">
+            {/* Theme toggle */}
+            <button
+              onClick={toggle}
+              className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-[#2D3748] shadow-sm transition-colors hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600"
+              aria-label="Toggle theme"
+            >
+              {theme === "light" ? <MoonIcon /> : <SunIcon />}
+            </button>
+
+            {services.length > 0 && (
+              <>
+                <select
+                  value={current?.id ?? ""}
+                  onChange={(e) => {
+                    const svc = services.find((s) => s.id === Number(e.target.value));
+                    if (svc) select(svc);
+                  }}
+                  className="rounded-xl border border-gray-200 bg-white px-2 py-2 text-xs font-medium text-[#2D3748] shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:focus:ring-teal-500 md:px-3"
+                >
+                  {services.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+                {current && (
+                  <span className="hidden rounded-lg bg-teal-50 px-2 py-1 text-xs font-semibold capitalize text-teal-600 dark:bg-teal-900/40 dark:text-teal-300 sm:inline">
+                    {current.role}
+                  </span>
+                )}
+              </>
+            )}
+          </div>
         </header>
 
         {/* Content */}

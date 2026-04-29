@@ -52,7 +52,7 @@ export default function LoginPage() {
       </div>
 
       {/* Right: form panel */}
-      <div className="flex flex-1 flex-col items-center justify-center bg-[#F8F9FA] p-8">
+      <div className="flex flex-1 flex-col items-center justify-center bg-[#F8F9FA] p-8 dark:bg-gray-900">
         <div className="w-full max-w-sm">
           {/* Mobile logo */}
           <div className="mb-8 flex items-center gap-3 lg:hidden">
@@ -61,10 +61,10 @@ export default function LoginPage() {
                 <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z" />
               </svg>
             </div>
-            <span className="text-sm font-bold text-[#2D3748]">RAGKIT ADMIN</span>
+            <span className="text-sm font-bold text-[#2D3748] dark:text-gray-100">RAGKIT ADMIN</span>
           </div>
 
-          <h2 className="text-2xl font-bold text-[#2D3748]">Welcome back</h2>
+          <h2 className="text-2xl font-bold text-[#2D3748] dark:text-gray-100">Welcome back</h2>
           <p className="mt-1 mb-8 text-sm text-[#A0AEC0]">Sign in to your admin account</p>
 
           <form onSubmit={onSubmit} className="space-y-5">

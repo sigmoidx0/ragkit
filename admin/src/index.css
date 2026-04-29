@@ -6,6 +6,10 @@
   color-scheme: light;
 }
 
+.dark {
+  color-scheme: dark;
+}
+
 html,
 body,
 #root {
@@ -13,5 +17,5 @@ body,
 }
 
 body {
-  @apply bg-[#F8F9FA] text-[#2D3748] antialiased;
+  @apply bg-[#F8F9FA] text-[#2D3748] antialiased dark:bg-gray-900 dark:text-gray-100;
 }

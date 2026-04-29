@@ -33,7 +33,7 @@ export function DataTable<T>({
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
-        <thead className="bg-gray-50 text-left text-xs font-bold uppercase tracking-wide text-[#A0AEC0]">
+        <thead className="bg-gray-50 text-left text-xs font-bold uppercase tracking-wide text-[#A0AEC0] dark:bg-gray-700/50">
           <tr>
             {columns.map((col) => (
               <th key={col.header} className={cn("px-4 py-3", col.className)}>
@@ -65,9 +65,9 @@ export function DataTable<T>({
                 <Fragment key={key}>
                   <tr
                     className={cn(
-                      "border-t border-gray-100 transition-colors hover:bg-gray-50",
+                      "border-t border-gray-100 transition-colors hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-700/40",
                       onRowClick && "cursor-pointer",
-                      isSelected && "bg-teal-50",
+                      isSelected ? "bg-teal-50 dark:bg-teal-900/20" : "",
                     )}
                     onClick={() => onRowClick?.(row)}
                   >
@@ -78,7 +78,7 @@ export function DataTable<T>({
                     ))}
                   </tr>
                   {isSelected && renderExpanded && (
-                    <tr className="border-t border-gray-100 lg:hidden">
+                    <tr className="border-t border-gray-100 dark:border-gray-700 lg:hidden">
                       <td colSpan={colSpan} className="p-0">
                         {renderExpanded(row)}
                       </td>

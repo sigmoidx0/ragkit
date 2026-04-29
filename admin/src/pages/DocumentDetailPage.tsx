@@ -31,6 +31,7 @@ export default function DocumentDetailPage() {
 
   const [showPreview, setShowPreview] = useState(false);
   const [showMarkdown, setShowMarkdown] = useState(false);
+  const [rawMarkdown, setRawMarkdown] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const markdownQuery = useQuery({
@@ -101,6 +102,8 @@ export default function DocumentDetailPage() {
             <span>{data.mime_type}</span>
             <span>·</span>
             <span>{formatBytes(data.size_bytes)}</span>
+            <span>·</span>
+            <span>{data.embedding_model ?? "—"}</span>
             <Badge tone={statusTone(data.status)}>{data.status}</Badge>
           </div>
           {data.description && (
@@ -113,7 +116,7 @@ export default function DocumentDetailPage() {
         <div className="flex flex-wrap gap-2">
           <a
             href={service ? DocumentsApi.fileUrl(service.id, id) : "#"}
-            className="inline-flex items-center justify-center rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium hover:bg-gray-100"
+            className="inline-flex items-center justify-center rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium hover:bg-gray-100 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600"
           >
             Download
           </a>
@@ -135,17 +138,39 @@ export default function DocumentDetailPage() {
 
       {showMarkdown && (
         <Card className="p-5">
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-[#A0AEC0]">
-            Converted Markdown
-          </h2>
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-[#A0AEC0]">
+              Converted Markdown
+            </h2>
+            <div className="flex rounded-md border border-gray-200 text-xs font-medium dark:border-gray-600">
+              <button
+                className={`px-3 py-1 rounded-l-md transition-colors ${!rawMarkdown ? "bg-gray-100 text-gray-900 dark:bg-gray-600 dark:text-gray-100" : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"}`}
+                onClick={() => setRawMarkdown(false)}
+              >
+                Preview
+              </button>
+              <button
+                className={`px-3 py-1 rounded-r-md transition-colors border-l border-gray-200 dark:border-gray-600 ${rawMarkdown ? "bg-gray-100 text-gray-900 dark:bg-gray-600 dark:text-gray-100" : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"}`}
+                onClick={() => setRawMarkdown(true)}
+              >
+                Raw
+              </button>
+            </div>
+          </div>
           {markdownQuery.isLoading && <div className="text-sm text-[#A0AEC0]">Loading…</div>}
           {markdownQuery.isError && (
             <div className="text-sm text-red-600">Failed to load markdown.</div>
           )}
           {markdownQuery.data && (
-            <div className="prose prose-sm max-w-none overflow-auto rounded border border-gray-100 bg-gray-50 p-4 max-h-[70vh]">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{markdownQuery.data.text}</ReactMarkdown>
-            </div>
+            rawMarkdown ? (
+              <pre className="overflow-auto rounded border border-gray-100 bg-gray-50 p-4 max-h-[70vh] text-xs leading-relaxed whitespace-pre-wrap break-words text-gray-800 dark:border-gray-700 dark:bg-gray-700/40 dark:text-gray-200">
+                {markdownQuery.data.text}
+              </pre>
+            ) : (
+              <div className="prose prose-sm max-w-none overflow-auto rounded border border-gray-100 bg-gray-50 p-4 max-h-[70vh] dark:prose-invert dark:border-gray-700 dark:bg-gray-700/40">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{markdownQuery.data.text}</ReactMarkdown>
+              </div>
+            )
           )}
         </Card>
       )}

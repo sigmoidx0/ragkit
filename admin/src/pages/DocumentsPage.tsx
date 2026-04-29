@@ -21,7 +21,7 @@ const DOC_COLUMNS: Column<DocumentSummary>[] = [
     header: "Title",
     render: (d) => (
       <div>
-        <Link to={`/documents/${d.id}`} className="font-medium text-[#2D3748] hover:underline">
+        <Link to={`/documents/${d.id}`} className="font-medium text-[#2D3748] hover:underline dark:text-gray-100">
           {d.title}
         </Link>
         {d.description && (
@@ -32,6 +32,12 @@ const DOC_COLUMNS: Column<DocumentSummary>[] = [
   },
   { header: "File", render: (d) => <span className="text-[#A0AEC0]">{d.source_filename}</span> },
   { header: "Status", render: (d) => <Badge tone={statusTone(d.status)}>{d.status}</Badge> },
+  {
+    header: "Embedding Model",
+    render: (d) => (
+      <span className="text-[#A0AEC0]">{d.embedding_model ?? "—"}</span>
+    ),
+  },
   {
     header: "Created",
     render: (d) => (
@@ -73,7 +79,7 @@ function PreviewContent({
     );
   }
   return (
-    <div className="prose prose-sm max-w-none p-4">
+    <div className="prose prose-sm max-w-none p-4 dark:prose-invert">
       <ReactMarkdown>{markdown}</ReactMarkdown>
     </div>
   );
@@ -206,7 +212,7 @@ export default function DocumentsPage() {
                 rows={2}
               />
             </div>
-            <div className="md:col-span-2 rounded-xl border border-gray-100 bg-gray-50 p-4">
+            <div className="md:col-span-2 rounded-xl border border-gray-100 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-700/40">
               <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-[#A0AEC0]">
                 Chunking Strategy
               </p>
@@ -223,7 +229,7 @@ export default function DocumentsPage() {
         {/* Mobile-only preview: shown between upload form and list */}
         {(file || previewMutation.isPending) && (
           <Card className="overflow-hidden lg:hidden">
-            <div className="border-b border-gray-100 px-4 py-3">
+            <div className="border-b border-gray-100 px-4 py-3 dark:border-gray-700">
               <h2 className="text-sm font-semibold uppercase tracking-wide text-[#A0AEC0]">
                 Preview
               </h2>
@@ -235,7 +241,7 @@ export default function DocumentsPage() {
         )}
 
         <Card>
-          <div className="flex items-center justify-between gap-3 border-b border-gray-100 p-4">
+          <div className="flex items-center justify-between gap-3 border-b border-gray-100 p-4 dark:border-gray-700">
             <Input
               placeholder="Filter by title…"
               value={q}
@@ -279,7 +285,7 @@ export default function DocumentsPage() {
 
       <div className="hidden lg:flex lg:flex-col lg:overflow-hidden">
         <Card className="flex min-h-0 flex-1 flex-col overflow-hidden">
-            <div className="shrink-0 border-b border-gray-100 px-4 py-3">
+            <div className="shrink-0 border-b border-gray-100 px-4 py-3 dark:border-gray-700">
               <h2 className="text-sm font-semibold uppercase tracking-wide text-[#A0AEC0]">
                 Preview
               </h2>
