@@ -8,12 +8,26 @@ import uuid
 import httpx
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.db.models import Document, DocumentStatus
 from app.embeddings import get_embedder
 from app.ingest import chunk_strategy_from_config
 from app.vectorstore import get_vectorstore
 
 logger = logging.getLogger(__name__)
+
+
+def _embedding_model_name() -> str:
+    cfg = get_settings().embeddings
+    if cfg.provider == "ollama":
+        return f"ollama/{cfg.ollama.model}"
+    if cfg.provider == "tei":
+        return "tei"
+    if cfg.provider == "vllm":
+        return f"vllm/{cfg.vllm.model}"
+    if cfg.provider == "azure_openai":
+        return f"azure_openai/{cfg.azure_openai.deployment}"
+    return cfg.provider
 
 
 def _friendly_error(stage: DocumentStatus, exc: BaseException) -> str:
@@ -60,6 +74,7 @@ def index_document(db: Session, document: Document, docs: list) -> None:
         vs.upsert(point_ids=point_ids, vectors=vectors, payloads=payloads)
         inserted_point_ids = point_ids
         document.status = DocumentStatus.indexed
+        document.embedding_model = _embedding_model_name()
         document.error = None
     except Exception as e:
         logger.exception("indexing failed for document %s at stage %s", document.id, document.status)

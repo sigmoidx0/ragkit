@@ -63,6 +63,7 @@ class DocumentOut(BaseModel):
     status: DocumentStatus
     error: str | None
     chunk_config: dict[str, Any] | None
+    embedding_model: str | None
     created_at: datetime
     updated_at: datetime
 

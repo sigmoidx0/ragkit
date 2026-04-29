@@ -79,3 +79,4 @@ class Document(TimestampMixin, Base):
     )
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     chunk_config: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    embedding_model: Mapped[str | None] = mapped_column(String(255), nullable=True)
