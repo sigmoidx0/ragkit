@@ -52,7 +52,7 @@ export default function ServicesPage() {
   const services = listQuery.data ?? [];
 
   const SERVICE_COLUMNS: Column<Service>[] = [
-    { header: "Name", render: (s) => <span className="font-medium text-[#2D3748]">{s.name}</span> },
+    { header: "Name", render: (s) => <span className="font-medium text-[#2D3748] dark:text-gray-100">{s.name}</span> },
     { header: "Slug", render: (s) => <span className="font-mono text-[#A0AEC0]">{s.slug}</span> },
     {
       header: "Created",

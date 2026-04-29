@@ -35,7 +35,7 @@ export default function UsersPage() {
   const users = listQuery.data ?? [];
 
   const USER_COLUMNS: Column<User>[] = [
-    { header: "Email", render: (u) => <span className="text-[#2D3748]">{u.email}</span> },
+    { header: "Email", render: (u) => <span className="text-[#2D3748] dark:text-gray-100">{u.email}</span> },
     {
       header: "Created",
       render: (u) => <span className="text-[#A0AEC0]">{new Date(u.created_at).toLocaleString()}</span>,

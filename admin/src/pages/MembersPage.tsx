@@ -74,7 +74,7 @@ export default function MembersPage() {
     {
       header: "Email",
       render: (m) => (
-        <span className="text-[#2D3748]">
+        <span className="text-[#2D3748] dark:text-gray-100">
           {users.find((u) => u.id === m.user_id)?.email ?? `#${m.user_id}`}
         </span>
       ),

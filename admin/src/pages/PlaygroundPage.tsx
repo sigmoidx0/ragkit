@@ -91,7 +91,7 @@ export default function PlaygroundPage() {
               />
             </div>
 
-            <div className="rounded-xl border border-gray-100 bg-gray-50 p-3">
+            <div className="rounded-xl border border-gray-100 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-700/40">
               <ChunkConfigForm value={chunkConfig} onChange={setChunkConfig} />
             </div>
 
