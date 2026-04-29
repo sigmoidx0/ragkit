@@ -66,18 +66,7 @@ npm run dev
 
 ## 설정
 
-비밀이 아닌 설정은 `server/config.yaml`에서 관리합니다:
-
-- `storage.kind` — `local`(기본) 또는 `s3`
-- `storage.upload_dir` — 로컬 저장 경로 (`storage.kind: local` 시, `server/` 기준 상대 경로)
-- `storage.s3.*` — S3 버킷, prefix, region, endpoint_url (MinIO 등 호환 스토리지 포함)
-- `db.url` — 기본값 SQLite; `DATABASE_URL` 환경변수로 덮어씀
-- `vectorstore` — Qdrant URL, 컬렉션명, 벡터 차원, 거리 함수
-- `embeddings.provider` — `ollama`(기본), `tei`, `vllm`, `azure_openai` 중 선택
-- `ingest.chunk_size` / `chunk_overlap` — 전역 기본 텍스트 분할 파라미터 (문서별 전략으로 재정의 가능)
-- `search.default_top_k` / `max_top_k`
-- `jwt.algorithm` / `access_token_ttl_minutes`
-- `admin_bootstrap.email` / `password_env`
+비밀이 아닌 설정은 `server/config.yaml`에서 관리합니다. 각 옵션의 의미와 허용값은 해당 파일의 주석을 참고하세요.
 
 환경변수 (`.env`):
 

@@ -1,12 +1,23 @@
+# ---------------------------------------------------------------------------
+# ragkit server configuration
+#
+# Secrets (passwords, API keys, tokens) must be set via environment variables
+# — never hardcode them here. See .env.example for the full list.
+# Shell-exported vars take precedence over values in .env files.
+# ---------------------------------------------------------------------------
+
 server:
+  # Origins allowed for CORS preflight requests.
+  # Add your frontend URL when deploying to production.
   cors_origins:
     - http://localhost:5173
 
 storage:
+  # kind: local  — files are saved to `upload_dir` on the local filesystem.
+  # kind: s3     — files are stored in an S3-compatible object store.
+  #                Fill in the s3 block below, or set the equivalent env vars.
   kind: local
   upload_dir: ./data/uploads
-  # To switch to S3 (or MinIO), set kind: s3 and fill in the s3 block,
-  # or provide the equivalent environment variables (see .env.example).
   # s3:
   #   bucket: my-ragkit-bucket
   #   prefix: ""           # optional key prefix within the bucket
@@ -14,21 +25,33 @@ storage:
   #   endpoint_url: ""     # set for MinIO / custom S3-compatible stores
 
 db:
+  # SQLAlchemy connection URL.
+  # SQLite (default, single-file):  sqlite:///./data/ragkit.db
+  # PostgreSQL:                      postgresql+psycopg2://user:pass@host/dbname
+  # Tables are created automatically on startup — no Alembic migrations.
+  # Drop the DB file / database and restart when changing models.
   url: sqlite:///./data/ragkit.db
 
 vectorstore:
+  # Only qdrant is supported.
   kind: qdrant
   url: http://localhost:6333
   collection: documents
+  # Must match the output dimension of the chosen embeddings model.
   vector_size: 768
+  # Distance metric used when creating the Qdrant collection.
+  # Options: Cosine | Euclid | Dot
   distance: Cosine
 
 embeddings:
+  # Which embedding backend to use. Pick one of: ollama | tei | vllm | azure_openai
+  # Only the block matching `provider` is used; the rest are ignored.
   provider: ollama
   ollama:
     base_url: http://localhost:11434
-    model: nomic-embed-text
+    model: nomic-embed-text        # vector_size must match this model's output
   tei:
+    # Text Embeddings Inference (Hugging Face)
     base_url: http://localhost:8080
   vllm:
     base_url: http://localhost:8000/v1
@@ -37,22 +60,32 @@ embeddings:
     endpoint: ""
     deployment: ""
     api_version: "2024-02-01"
+    # API key: set AZURE_OPENAI_API_KEY env var
 
 jwt:
   algorithm: HS256
+  # How long an access token stays valid (minutes).
   access_token_ttl_minutes: 60
+  # Secret key: set JWT_SECRET_KEY env var
 
 ingest:
+  # Target character count per chunk (approximate — split at sentence boundaries).
   chunk_size: 1000
+  # Character overlap between consecutive chunks to preserve context at boundaries.
   chunk_overlap: 150
 
 search:
+  # Number of results returned when the caller does not specify top_k.
   default_top_k: 5
+  # Hard ceiling on top_k accepted from API requests.
   max_top_k: 50
   # Set to true to enable hybrid search (dense + BM25 sparse via RRF).
-  # Requires a fresh Qdrant collection — drop the existing collection first.
+  # Requires a fresh Qdrant collection — drop the existing collection first,
+  # then restart the server so it is recreated with sparse vector support.
   hybrid: false
 
 admin_bootstrap:
+  # Initial admin account created on first startup (if no users exist yet).
   email: admin@example.com
+  # Password is read from this environment variable — never set it here.
   password_env: INITIAL_ADMIN_PASSWORD
