@@ -73,7 +73,13 @@ def build_search_chain(db: Session):
     def _do_search(inputs: dict[str, Any]) -> list[SearchHit]:
         q: SearchQuery = inputs["query"]
         vec: list[float] = inputs["vector"]
-        return vs.search(vector=vec, top_k=q.top_k, service_id=q.service_id, document_id=q.document_id)
+        return vs.search(
+            vector=vec,
+            top_k=q.top_k,
+            service_id=q.service_id,
+            document_id=q.document_id,
+            query_text=q.query,
+        )
 
     search = RunnableLambda(_do_search)
     enrich = RunnableLambda(lambda hits: _enrich(db, hits))

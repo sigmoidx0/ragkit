@@ -91,6 +91,7 @@ class IngestSection(BaseModel):
 class SearchSection(BaseModel):
     default_top_k: int = 5
     max_top_k: int = 50
+    hybrid: bool = False
 
 
 class AdminBootstrapSection(BaseModel):

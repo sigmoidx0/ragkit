@@ -35,4 +35,5 @@ class VectorStore(Protocol):
         top_k: int,
         service_id: int | None = None,
         document_id: int | None = None,
+        query_text: str | None = None,
     ) -> list[SearchHit]: ...

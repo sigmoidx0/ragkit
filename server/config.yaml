@@ -49,6 +49,9 @@ ingest:
 search:
   default_top_k: 5
   max_top_k: 50
+  # Set to true to enable hybrid search (dense + BM25 sparse via RRF).
+  # Requires a fresh Qdrant collection — drop the existing collection first.
+  hybrid: false
 
 admin_bootstrap:
   email: admin@example.com
