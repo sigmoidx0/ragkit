@@ -2,7 +2,7 @@ import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { UsersApi } from "@/api/endpoints";
-import { Button, Card, Input, Label } from "@/components/ui";
+import { Button, Card, FormField, Input, SectionHeading } from "@/components/ui";
 import { DataTable, type Column } from "@/components/DataTable";
 import type { User } from "@/api/types";
 
@@ -45,12 +45,9 @@ export default function UsersPage() {
   return (
     <div className="space-y-6">
       <Card className="p-5">
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-[#A0AEC0]">
-          New User
-        </h2>
+        <SectionHeading className="mb-3">New User</SectionHeading>
         <form onSubmit={onSubmit} className="grid gap-4 md:grid-cols-2">
-          <div>
-            <Label htmlFor="user-email">Email</Label>
+          <FormField label="Email" htmlFor="user-email">
             <Input
               id="user-email"
               type="email"
@@ -59,9 +56,8 @@ export default function UsersPage() {
               placeholder="user@example.com"
               required
             />
-          </div>
-          <div>
-            <Label htmlFor="user-password">Password</Label>
+          </FormField>
+          <FormField label="Password" htmlFor="user-password">
             <Input
               id="user-password"
               type="password"
@@ -71,7 +67,7 @@ export default function UsersPage() {
               minLength={8}
               required
             />
-          </div>
+          </FormField>
           <div className="md:col-span-2">
             <Button type="submit" disabled={createMutation.isPending}>
               {createMutation.isPending ? "Creating…" : "Create User"}

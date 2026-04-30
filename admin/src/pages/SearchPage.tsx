@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { SearchApi } from "@/api/endpoints";
-import { Button, Card, Input, Label } from "@/components/ui";
+import { Button, Card, FormField, Input } from "@/components/ui";
 import { useService } from "@/services/ServiceProvider";
 import type { SearchResponse } from "@/api/types";
 
@@ -39,8 +39,7 @@ export default function SearchPage() {
     <div className="space-y-6">
       <Card className="p-5">
         <form onSubmit={onSubmit} className="grid gap-4 md:grid-cols-4">
-          <div className="md:col-span-2">
-            <Label htmlFor="query">Query</Label>
+          <FormField label="Query" htmlFor="query" className="md:col-span-2">
             <Input
               id="query"
               value={query}
@@ -48,9 +47,8 @@ export default function SearchPage() {
               placeholder="Search your documents…"
               required
             />
-          </div>
-          <div>
-            <Label htmlFor="topk">Top K</Label>
+          </FormField>
+          <FormField label="Top K" htmlFor="topk">
             <Input
               id="topk"
               type="number"
@@ -59,16 +57,15 @@ export default function SearchPage() {
               value={topK}
               onChange={(e) => setTopK(Math.max(1, Number(e.target.value)))}
             />
-          </div>
-          <div>
-            <Label htmlFor="doc">Document ID (optional)</Label>
+          </FormField>
+          <FormField label="Document ID (optional)" htmlFor="doc">
             <Input
               id="doc"
               value={docId}
               onChange={(e) => setDocId(e.target.value)}
               placeholder="e.g. 1"
             />
-          </div>
+          </FormField>
           <div className="md:col-span-4">
             <Button type="submit" disabled={run.isPending || !service}>
               {run.isPending ? "Searching…" : "Search"}

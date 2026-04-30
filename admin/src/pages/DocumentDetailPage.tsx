@@ -2,19 +2,12 @@ import { useState, type FormEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { DocumentsApi } from "@/api/endpoints";
-import { Badge, Button, Card, Input, Label, formatBytes } from "@/components/ui";
+import { Badge, Button, Card, CardHeader, FormField, Input, SectionHeading, formatBytes } from "@/components/ui";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { MarkdownPreview } from "@/components/MarkdownPreview";
 import { useService } from "@/services/ServiceProvider";
-import type { DocumentStatus } from "@/api/types";
-
-function statusTone(s: DocumentStatus): "green" | "amber" | "red" {
-  if (s === "indexed") return "green";
-  if (s === "pending" || s === "chunking" || s === "embedding") return "amber";
-  return "red";
-}
+import { statusTone } from "@/lib/documentStatus";
 
 export default function DocumentDetailPage() {
   const params = useParams<{ id: string }>();
@@ -31,7 +24,6 @@ export default function DocumentDetailPage() {
 
   const [showPreview, setShowPreview] = useState(false);
   const [showMarkdown, setShowMarkdown] = useState(false);
-  const [rawMarkdown, setRawMarkdown] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const markdownQuery = useQuery({
@@ -137,41 +129,16 @@ export default function DocumentDetailPage() {
       </div>
 
       {showMarkdown && (
-        <Card className="p-5">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-[#A0AEC0]">
-              Converted Markdown
-            </h2>
-            <div className="flex rounded-md border border-gray-200 text-xs font-medium dark:border-gray-600">
-              <button
-                className={`px-3 py-1 rounded-l-md transition-colors ${!rawMarkdown ? "bg-gray-100 text-gray-900 dark:bg-gray-600 dark:text-gray-100" : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"}`}
-                onClick={() => setRawMarkdown(false)}
-              >
-                Preview
-              </button>
-              <button
-                className={`px-3 py-1 rounded-r-md transition-colors border-l border-gray-200 dark:border-gray-600 ${rawMarkdown ? "bg-gray-100 text-gray-900 dark:bg-gray-600 dark:text-gray-100" : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"}`}
-                onClick={() => setRawMarkdown(true)}
-              >
-                Raw
-              </button>
-            </div>
-          </div>
-          {markdownQuery.isLoading && <div className="text-sm text-[#A0AEC0]">Loading…</div>}
-          {markdownQuery.isError && (
-            <div className="text-sm text-red-600">Failed to load markdown.</div>
-          )}
-          {markdownQuery.data && (
-            rawMarkdown ? (
-              <pre className="overflow-auto rounded border border-gray-100 bg-gray-50 p-4 max-h-[70vh] text-xs leading-relaxed whitespace-pre-wrap break-words text-gray-800 dark:border-gray-700 dark:bg-gray-700/40 dark:text-gray-200">
-                {markdownQuery.data.text}
-              </pre>
-            ) : (
-              <div className="prose prose-sm max-w-none overflow-auto rounded border border-gray-100 bg-gray-50 p-4 max-h-[70vh] dark:prose-invert dark:border-gray-700 dark:bg-gray-700/40">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{markdownQuery.data.text}</ReactMarkdown>
-              </div>
-            )
-          )}
+        <Card className="overflow-hidden p-0">
+          <CardHeader>
+            <SectionHeading>Converted Markdown</SectionHeading>
+          </CardHeader>
+          <MarkdownPreview
+            markdown={markdownQuery.data?.text}
+            isLoading={markdownQuery.isLoading}
+            isError={markdownQuery.isError}
+            contentClassName="max-h-[70vh] overflow-auto"
+          />
         </Card>
       )}
 
@@ -192,18 +159,15 @@ export default function DocumentDetailPage() {
       )}
 
       <Card className="p-5">
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-[#A0AEC0]">
-          Replace file
-        </h2>
+        <SectionHeading className="mb-3">Replace file</SectionHeading>
         <form onSubmit={onReplace} className="flex flex-wrap items-end gap-3">
-          <div className="min-w-[200px] flex-1">
-            <Label htmlFor="rep">New file</Label>
+          <FormField label="New file" htmlFor="rep" className="min-w-[200px] flex-1">
             <Input
               id="rep"
               type="file"
               onChange={(e) => setReplaceFile(e.target.files?.[0] ?? null)}
             />
-          </div>
+          </FormField>
           <Button type="submit" disabled={replacing}>
             {replacing ? "Replacing…" : "Replace and re-index"}
           </Button>

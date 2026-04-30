@@ -2,19 +2,14 @@ import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import ReactMarkdown from "react-markdown";
 import { DocumentsApi, IngestApi } from "@/api/endpoints";
-import { Badge, Button, Card, Input, Label, Textarea } from "@/components/ui";
+import { Badge, Button, Card, CardHeader, ConfigSection, FormField, Input, SectionHeading, Textarea } from "@/components/ui";
 import { DataTable, type Column } from "@/components/DataTable";
 import { ChunkConfigForm } from "@/components/ChunkConfigForm";
+import { MarkdownPreview } from "@/components/MarkdownPreview";
 import { useService } from "@/services/ServiceProvider";
-import type { ChunkConfig, ChunkPreviewResponse, DocumentSummary, DocumentStatus } from "@/api/types";
-
-function statusTone(s: DocumentStatus): "green" | "amber" | "red" {
-  if (s === "indexed") return "green";
-  if (s === "pending" || s === "chunking" || s === "embedding") return "amber";
-  return "red";
-}
+import { statusTone } from "@/lib/documentStatus";
+import type { ChunkConfig, ChunkPreviewResponse, DocumentSummary } from "@/api/types";
 
 const DOC_COLUMNS: Column<DocumentSummary>[] = [
   {
@@ -46,44 +41,6 @@ const DOC_COLUMNS: Column<DocumentSummary>[] = [
   },
 ];
 
-function PreviewContent({
-  markdown,
-  isLoading,
-  isError,
-  fileName,
-}: {
-  markdown?: string;
-  isLoading: boolean;
-  isError: boolean;
-  fileName?: string;
-}) {
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center py-10 text-sm text-[#A0AEC0]">
-        Converting {fileName}…
-      </div>
-    );
-  }
-  if (isError) {
-    return (
-      <div className="flex items-center justify-center py-10 text-sm text-red-400">
-        Failed to convert file.
-      </div>
-    );
-  }
-  if (!markdown) {
-    return (
-      <div className="flex items-center justify-center py-10 text-sm text-[#A0AEC0]">
-        Select a file to preview its content
-      </div>
-    );
-  }
-  return (
-    <div className="prose prose-sm max-w-none p-4 dark:prose-invert">
-      <ReactMarkdown>{markdown}</ReactMarkdown>
-    </div>
-  );
-}
 
 export default function DocumentsPage() {
   const qc = useQueryClient();
@@ -184,40 +141,35 @@ export default function DocumentsPage() {
       <div className="space-y-6 lg:self-start">
         <Card className="p-5">
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-[#A0AEC0]">
-              Upload
-            </h2>
+            <SectionHeading>Upload</SectionHeading>
             <span className="text-xs text-[#A0AEC0]">{total} total</span>
           </div>
           <form onSubmit={onUpload} className="grid gap-4 md:grid-cols-2">
-            <div>
-              <Label htmlFor="title">Title</Label>
+            <FormField label="Title" htmlFor="title">
               <Input
                 id="title"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 required
               />
-            </div>
-            <div>
-              <Label htmlFor="file">File</Label>
+            </FormField>
+            <FormField label="File" htmlFor="file">
               <Input id="file" type="file" onChange={handleFileChange} required />
-            </div>
-            <div className="md:col-span-2">
-              <Label htmlFor="description">Description (optional)</Label>
+            </FormField>
+            <FormField label="Description (optional)" htmlFor="description" className="md:col-span-2">
               <Textarea
                 id="description"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 rows={2}
               />
-            </div>
-            <div className="md:col-span-2 rounded-xl border border-gray-100 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-700/40">
+            </FormField>
+            <ConfigSection className="md:col-span-2">
               <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-[#A0AEC0]">
                 Chunking Strategy
               </p>
               <ChunkConfigForm value={chunkConfig} onChange={setChunkConfig} />
-            </div>
+            </ConfigSection>
             <div className="md:col-span-2">
               <Button type="submit" disabled={uploading}>
                 {uploading ? "Uploading…" : "Upload"}
@@ -229,14 +181,10 @@ export default function DocumentsPage() {
         {/* Mobile-only preview: shown between upload form and list */}
         {(file || previewMutation.isPending) && (
           <Card className="overflow-hidden lg:hidden">
-            <div className="border-b border-gray-100 px-4 py-3 dark:border-gray-700">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-[#A0AEC0]">
-                Preview
-              </h2>
-            </div>
-            <div className="max-h-72 overflow-y-auto">
-              <PreviewContent {...previewProps} />
-            </div>
+            <CardHeader>
+              <SectionHeading>Preview</SectionHeading>
+            </CardHeader>
+            <MarkdownPreview {...previewProps} contentClassName="max-h-72 overflow-y-auto" />
           </Card>
         )}
 
@@ -285,14 +233,10 @@ export default function DocumentsPage() {
 
       <div className="hidden lg:flex lg:flex-col lg:overflow-hidden">
         <Card className="flex min-h-0 flex-1 flex-col overflow-hidden">
-            <div className="shrink-0 border-b border-gray-100 px-4 py-3 dark:border-gray-700">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-[#A0AEC0]">
-                Preview
-              </h2>
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto">
-              <PreviewContent {...previewProps} />
-            </div>
+            <CardHeader className="shrink-0">
+              <SectionHeading>Preview</SectionHeading>
+            </CardHeader>
+            <MarkdownPreview {...previewProps} />
         </Card>
       </div>
     </div>

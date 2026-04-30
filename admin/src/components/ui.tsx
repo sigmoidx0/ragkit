@@ -155,6 +155,72 @@ export function Badge({
   );
 }
 
+export function SectionHeading({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <h2 className={cn("text-sm font-semibold uppercase tracking-wide text-[#A0AEC0]", className)}>
+      {children}
+    </h2>
+  );
+}
+
+export function CardHeader({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={cn("border-b border-gray-100 px-4 py-3 dark:border-gray-700", className)}>
+      {children}
+    </div>
+  );
+}
+
+export function FormField({
+  label,
+  htmlFor,
+  children,
+  className,
+}: {
+  label: string;
+  htmlFor: string;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={className}>
+      <Label htmlFor={htmlFor}>{label}</Label>
+      {children}
+    </div>
+  );
+}
+
+export function ConfigSection({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "rounded-xl border border-gray-100 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-700/40",
+        className,
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
 export function ErrorBox({ message }: { message: string }) {
   if (!message) return null;
   return (

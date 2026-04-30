@@ -2,7 +2,7 @@ import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ServicesApi, UsersApi } from "@/api/endpoints";
-import { Button, Card, Label, Select } from "@/components/ui";
+import { Button, Card, FormField, SectionHeading, Select } from "@/components/ui";
 import { DataTable, type Column } from "@/components/DataTable";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useService } from "@/services/ServiceProvider";
@@ -133,12 +133,9 @@ export default function MembersPage() {
         Remove <strong>{confirmRemoveEmail}</strong> from this service?
       </ConfirmDialog>
       <Card className="p-5">
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-[#A0AEC0]">
-          Add Member — {service.name}
-        </h2>
+        <SectionHeading className="mb-3">Add Member — {service.name}</SectionHeading>
         <form onSubmit={onSubmit} className="grid gap-4 md:grid-cols-3">
-          <div className="md:col-span-2">
-            <Label htmlFor="user-select">User</Label>
+          <FormField label="User" htmlFor="user-select" className="md:col-span-2">
             <Select
               id="user-select"
               value={selectedUserId}
@@ -152,9 +149,8 @@ export default function MembersPage() {
                 </option>
               ))}
             </Select>
-          </div>
-          <div>
-            <Label htmlFor="role-select">Role</Label>
+          </FormField>
+          <FormField label="Role" htmlFor="role-select">
             <Select
               id="role-select"
               value={selectedRole}
@@ -166,7 +162,7 @@ export default function MembersPage() {
                 </option>
               ))}
             </Select>
-          </div>
+          </FormField>
           <div className="md:col-span-3">
             <Button type="submit" disabled={addMutation.isPending || !selectedUserId}>
               {addMutation.isPending ? "Adding…" : "Add Member"}

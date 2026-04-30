@@ -2,7 +2,7 @@ import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ServicesApi } from "@/api/endpoints";
-import { Button, Card, Input, Label } from "@/components/ui";
+import { Button, Card, FormField, Input, SectionHeading } from "@/components/ui";
 import { DataTable, type Column } from "@/components/DataTable";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useService } from "@/services/ServiceProvider";
@@ -89,12 +89,9 @@ export default function ServicesPage() {
         Delete <strong>{confirmDelete?.name}</strong>? This cannot be undone.
       </ConfirmDialog>
       <Card className="p-5">
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-[#A0AEC0]">
-          New Service
-        </h2>
+        <SectionHeading className="mb-3">New Service</SectionHeading>
         <form onSubmit={onSubmit} className="grid gap-4 md:grid-cols-2">
-          <div>
-            <Label htmlFor="svc-name">Name</Label>
+          <FormField label="Name" htmlFor="svc-name">
             <Input
               id="svc-name"
               value={name}
@@ -102,9 +99,8 @@ export default function ServicesPage() {
               placeholder="My Service"
               required
             />
-          </div>
-          <div>
-            <Label htmlFor="svc-slug">Slug</Label>
+          </FormField>
+          <FormField label="Slug" htmlFor="svc-slug">
             <Input
               id="svc-slug"
               value={slug}
@@ -112,7 +108,7 @@ export default function ServicesPage() {
               placeholder="my-service"
               required
             />
-          </div>
+          </FormField>
           <div className="md:col-span-2">
             <Button type="submit" disabled={createMutation.isPending}>
               {createMutation.isPending ? "Creating…" : "Create"}

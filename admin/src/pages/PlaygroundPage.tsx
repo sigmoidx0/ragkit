@@ -1,11 +1,10 @@
 import { useState, type FormEvent } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { IngestApi } from "@/api/endpoints";
-import { Button, Card, Input, Label } from "@/components/ui";
+import { Button, Card, ConfigSection, FormField, Input, SectionHeading } from "@/components/ui";
 import { ChunkConfigForm } from "@/components/ChunkConfigForm";
+import { MarkdownPreview } from "@/components/MarkdownPreview";
 import type { ChunkConfig, ChunkPreviewChunk, ChunkPreviewResponse } from "@/api/types";
 
 type Tab = "markdown" | "chunks";
@@ -77,23 +76,20 @@ export default function PlaygroundPage() {
       <div className="grid gap-6 lg:grid-cols-[340px_1fr]">
         {/* ── Config panel ─────────────────────────────── */}
         <Card className="h-fit p-5 lg:sticky lg:top-6">
-          <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-[#A0AEC0]">
-            Playground
-          </h2>
+          <SectionHeading className="mb-4">Playground</SectionHeading>
           <form onSubmit={onSubmit} className="space-y-4">
-            <div>
-              <Label htmlFor="pg-file">File</Label>
+            <FormField label="File" htmlFor="pg-file">
               <Input
                 id="pg-file"
                 type="file"
                 onChange={(e) => setFile(e.target.files?.[0] ?? null)}
                 required
               />
-            </div>
+            </FormField>
 
-            <div className="rounded-xl border border-gray-100 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-700/40">
+            <ConfigSection className="p-3">
               <ChunkConfigForm value={chunkConfig} onChange={setChunkConfig} />
-            </div>
+            </ConfigSection>
 
             <Button type="submit" disabled={run.isPending || !file} className="w-full">
               {run.isPending ? "Processing…" : "Run Preview"}
@@ -152,15 +148,13 @@ export default function PlaygroundPage() {
 
               {/* Markdown tab */}
               {tab === "markdown" && (
-                <Card className="p-5">
+                <Card className="overflow-hidden p-0">
                   {result.markdown_truncated && (
-                    <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
-                      Preview truncated to 50,000 characters.
-                    </p>
+                    <div className="border-b border-amber-100 bg-amber-50 px-4 py-3">
+                      <p className="text-xs text-amber-700">Preview truncated to 50,000 characters.</p>
+                    </div>
                   )}
-                  <div className="prose prose-sm max-w-none overflow-auto rounded border border-gray-100 bg-gray-50 p-4 max-h-[70vh]">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{result.markdown}</ReactMarkdown>
-                  </div>
+                  <MarkdownPreview markdown={result.markdown} contentClassName="max-h-[70vh] overflow-auto" />
                 </Card>
               )}
             </>
