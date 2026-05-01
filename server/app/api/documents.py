@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Iterator
 from typing import Annotated
 
@@ -20,6 +21,7 @@ from app.services.documents import delete_document, delete_document_dir, save_do
 from app.services.indexing import index_document, clear_document_index
 from app.storage import get_storage
 
+logger = logging.getLogger(__name__)
 _chunk_config_adapter = TypeAdapter(AnyChunkConfig)
 
 router = APIRouter(prefix="/services/{service_id}/documents", tags=["documents"])
@@ -102,11 +104,18 @@ def create_document(
     save_document_file(document, file.file, file.filename, file.content_type)
     db.flush()
 
-    with get_storage().as_local_path(document.file_path) as path:
-        docs = convert_to_documents(path)
+    try:
+        with get_storage().as_local_path(document.file_path) as path:
+            docs = convert_to_documents(path)
+    except Exception as e:
+        logger.exception("file conversion failed for document %s", document.id)
+        delete_document_dir(document.id)
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"conversion failed: {e}") from e
+
     try:
         index_document(db, document, docs)
     except Exception as e:
+        logger.exception("indexing failed for document %s", document.id)
         delete_document_dir(document.id)
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, f"indexing failed: {e}") from e
     return DocumentOut.model_validate(document)
@@ -149,9 +158,18 @@ def replace_document(
     document.error = None
     db.flush()
 
-    with get_storage().as_local_path(document.file_path) as path:
-        docs = convert_to_documents(path)
-    index_document(db, document, docs)
+    try:
+        with get_storage().as_local_path(document.file_path) as path:
+            docs = convert_to_documents(path)
+    except Exception as e:
+        logger.exception("file conversion failed for document %s", document_id)
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"conversion failed: {e}") from e
+
+    try:
+        index_document(db, document, docs)
+    except Exception as e:
+        logger.exception("indexing failed for document %s", document_id)
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, f"indexing failed: {e}") from e
     return DocumentOut.model_validate(document)
 
 

@@ -11,7 +11,8 @@ from pathlib import Path
 from langchain_core.documents import Document
 
 _PDF_EXT = {".pdf"}
-_OFFICE_EXT = {".docx", ".doc", ".pptx", ".ppt", ".xlsx", ".xls"}
+_OFFICE_EXT = {".docx", ".pptx", ".xlsx", ".xls"}
+_LEGACY_OFFICE_EXT = {".doc", ".ppt"}  # old binary formats not supported by MarkItDown
 _TEXT_EXT = {".txt", ".md", ".markdown", ".rst", ".log"}
 
 
@@ -40,6 +41,8 @@ def convert_to_documents(path: Path) -> list[Document]:
         return _load_pdf(path)
     if ext in _OFFICE_EXT:
         return _load_office(path)
+    if ext in _LEGACY_OFFICE_EXT:
+        raise ValueError(f"{ext} (old binary format) is not supported; please convert to {ext}x first")
     if ext in _TEXT_EXT:
         return _load_text(path)
     # Fallback: treat unknown formats as plain text.

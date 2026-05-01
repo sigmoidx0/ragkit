@@ -15,6 +15,10 @@ from app.db.bootstrap import bootstrap_admin
 from app.db.session import SessionLocal
 from app.vectorstore import get_vectorstore
 
+# Configure logging at import time so it takes effect in every worker process
+# before any request is handled, independent of lifespan execution order.
+configure_logging()
+
 logger = logging.getLogger(__name__)
 
 
@@ -30,6 +34,7 @@ def _run_migrations() -> None:
 async def lifespan(_app: FastAPI):
     configure_logging()
     _run_migrations()
+    configure_logging()  # re-apply after alembic's fileConfig() overrides root logger
     with SessionLocal() as db:
         bootstrap_admin(db)
     try:
