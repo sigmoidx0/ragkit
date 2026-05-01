@@ -1,4 +1,4 @@
-"""LangChain LCEL: query → embed → Qdrant search → attach document titles."""
+"""LangChain LCEL: query → embed → vector search → rerank → enrich."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.db.models import Document
 from app.embeddings import get_embedder
+from app.rag.reranker import get_reranker
 from app.vectorstore import SearchHit, get_vectorstore
 
 
@@ -67,26 +68,36 @@ def build_search_chain(db: Session):
     """Return LCEL chain: SearchQuery → list[EnrichedHit]."""
     embedder = get_embedder()
     vs = get_vectorstore()
+    reranker = get_reranker()
+    reranker_cfg = get_settings().search.reranker
 
     embed = RunnableLambda(lambda q: embedder.embed_query(q.query))
 
-    def _do_search(inputs: dict[str, Any]) -> list[SearchHit]:
+    def _do_search(inputs: dict[str, Any]) -> dict[str, Any]:
         q: SearchQuery = inputs["query"]
         vec: list[float] = inputs["vector"]
-        return vs.search(
+        fetch_k = q.top_k * reranker_cfg.fetch_k_multiplier if reranker_cfg is not None else q.top_k
+        hits = vs.search(
             vector=vec,
-            top_k=q.top_k,
+            top_k=fetch_k,
             service_id=q.service_id,
             document_id=q.document_id,
             query_text=q.query,
         )
+        return {"query": q, "hits": hits}
+
+    def _rerank(data: dict[str, Any]) -> list[SearchHit]:
+        q: SearchQuery = data["query"]
+        return reranker.rerank(q.query, data["hits"], q.top_k)
 
     search = RunnableLambda(_do_search)
+    rerank = RunnableLambda(_rerank)
     enrich = RunnableLambda(lambda hits: _enrich(db, hits))
 
     return (
         RunnableParallel(query=RunnablePassthrough(), vector=embed)
         | search
+        | rerank
         | enrich
     )
 

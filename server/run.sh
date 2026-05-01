@@ -7,7 +7,7 @@ HOST="${HOST:-0.0.0.0}"
 PORT="${PORT:-8000}"
 RELOAD="${RELOAD:-true}"
 
-exec uvicorn app.main:app \
+exec uv run uvicorn app.main:app \
   --host "$HOST" \
   --port "$PORT" \
   $( [ "$RELOAD" = "true" ] && echo "--reload" ) \

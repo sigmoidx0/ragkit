@@ -83,6 +83,17 @@ search:
   # Requires a fresh Qdrant collection — drop the existing collection first,
   # then restart the server so it is recreated with sparse vector support.
   hybrid: false
+  # reranker: omit this block to disable reranking entirely.
+  reranker:
+    # provider: cross_encoder — runs locally via sentence-transformers (no API key needed).
+    #           cohere        — calls the Cohere Rerank API (set RERANKER_API_KEY).
+    provider: cross_encoder
+    # cross_encoder models: BAAI/bge-reranker-base (multilingual, ~280 MB)
+    #                       cross-encoder/ms-marco-MiniLM-L-6-v2 (English, ~80 MB)
+    # cohere models:        rerank-v3.5 | rerank-english-v3.0 | rerank-multilingual-v3.0
+    model: BAAI/bge-reranker-base
+    # How many candidates to fetch per final result. top_k=5, multiplier=4 → fetch 20.
+    fetch_k_multiplier: 4
 
 admin_bootstrap:
   # Initial admin account created on first startup (if no users exist yet).

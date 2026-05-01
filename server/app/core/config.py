@@ -88,10 +88,18 @@ class IngestSection(BaseModel):
     chunk_overlap: int = 150
 
 
+class RerankerSection(BaseModel):
+    provider: Literal["cohere", "cross_encoder"]
+    model: str
+    api_key: str | None = None
+    fetch_k_multiplier: int = 4
+
+
 class SearchSection(BaseModel):
     default_top_k: int = 5
     max_top_k: int = 50
     hybrid: bool = False
+    reranker: RerankerSection | None = None
 
 
 class AdminBootstrapSection(BaseModel):
@@ -162,6 +170,10 @@ def _apply_env_overrides(raw: dict[str, Any]) -> dict[str, Any]:
     emb_key = os.getenv("EMBEDDING_API_KEY")
     if emb_key:
         raw.setdefault("embeddings", {})["api_key"] = emb_key
+
+    reranker_key = os.getenv("RERANKER_API_KEY")
+    if reranker_key:
+        raw.setdefault("search", {}).setdefault("reranker", {})["api_key"] = reranker_key
 
     s3_bucket = os.getenv("S3_BUCKET")
     if s3_bucket:
