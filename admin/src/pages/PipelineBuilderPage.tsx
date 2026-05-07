@@ -185,6 +185,21 @@ export default function PipelineBuilderPage() {
 
   const [activePipelineStatus, setActivePipelineStatus] = useState<PipelineStatus>("draft");
 
+  const deleteMutation = useMutation({
+    mutationFn: () => {
+      if (!service || activePipelineId == null) throw new Error("No pipeline selected");
+      return PipelineApi.remove(service.id, activePipelineId);
+    },
+    onSuccess: () => {
+      newPipeline();
+      void refetchPipelines();
+      toast.success("Pipeline deleted.");
+    },
+    onError: (e: unknown) => {
+      toast.error(e instanceof Error ? e.message : "Delete failed");
+    },
+  });
+
   const statusMutation = useMutation({
     mutationFn: (newStatus: PipelineStatus) => {
       if (!service || activePipelineId == null) throw new Error("No pipeline selected");
@@ -395,6 +410,18 @@ export default function PipelineBuilderPage() {
                     Archive
                   </Button>
                 )}
+                <Button
+                  size="sm"
+                  variant="danger"
+                  onClick={() => {
+                    if (window.confirm(`"${pipelineName}" 파이프라인을 삭제할까요?`)) {
+                      deleteMutation.mutate();
+                    }
+                  }}
+                  disabled={deleteMutation.isPending}
+                >
+                  Delete
+                </Button>
               </>
             )}
           </>
