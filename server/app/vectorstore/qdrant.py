@@ -4,16 +4,14 @@ from __future__ import annotations
 
 import logging
 from functools import lru_cache
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as qm
 
 from app.core.config import get_settings
+from app.sparse_encoder import SparseEncoder, get_sparse_encoder
 from app.vectorstore.base import SearchHit, VectorStore
-
-if TYPE_CHECKING:
-    from fastembed import SparseTextEmbedding
 
 logger = logging.getLogger(__name__)
 
@@ -147,12 +145,11 @@ class QdrantStore:
 
 
 class HybridQdrantStore(QdrantStore):
-    """Dense + BM25 sparse hybrid store with RRF fusion."""
+    """Dense + sparse hybrid store with RRF fusion."""
 
-    def __init__(self, **kwargs: Any) -> None:
+    def __init__(self, sparse_encoder: SparseEncoder, **kwargs: Any) -> None:
         super().__init__(**kwargs)
-        from fastembed import SparseTextEmbedding
-        self._bm25: SparseTextEmbedding = SparseTextEmbedding(model_name="Qdrant/bm25")
+        self._encoder = sparse_encoder
 
     def _collection_config(self) -> dict[str, Any]:
         return {
@@ -176,20 +173,17 @@ class HybridQdrantStore(QdrantStore):
         payloads: list[dict[str, Any]],
     ) -> list[qm.PointStruct]:
         texts = [p.get("text", "") for p in payloads]
-        sparse_results = list(self._bm25.embed(texts))
+        sparse_vecs = self._encoder.encode_documents(texts)
         return [
             qm.PointStruct(
                 id=pid,
                 vector={
                     _DENSE: vec,
-                    _SPARSE: qm.SparseVector(
-                        indices=sp.indices.tolist(),
-                        values=sp.values.tolist(),
-                    ),
+                    _SPARSE: qm.SparseVector(indices=sv.indices, values=sv.values),
                 },
                 payload=payload,
             )
-            for pid, vec, payload, sp in zip(point_ids, vectors, payloads, sparse_results, strict=True)
+            for pid, vec, payload, sv in zip(point_ids, vectors, payloads, sparse_vecs, strict=True)
         ]
 
     def _do_search(
@@ -201,16 +195,13 @@ class HybridQdrantStore(QdrantStore):
     ) -> list[SearchHit]:
         if not query_text:
             return super()._do_search(vector, top_k, flt, query_text)
-        sparse_query = list(self._bm25.query_embed([query_text]))[0]
+        sv = self._encoder.encode_query(query_text)
         results = self._client.query_points(
             collection_name=self._collection,
             prefetch=[
                 qm.Prefetch(query=vector, using=_DENSE, limit=top_k * 2, filter=flt),
                 qm.Prefetch(
-                    query=qm.SparseVector(
-                        indices=sparse_query.indices.tolist(),
-                        values=sparse_query.values.tolist(),
-                    ),
+                    query=qm.SparseVector(indices=sv.indices, values=sv.values),
                     using=_SPARSE,
                     limit=top_k * 2,
                     filter=flt,
@@ -223,17 +214,13 @@ class HybridQdrantStore(QdrantStore):
         return _to_hits(results.points)
 
 
-# ------------------------------------------------------------------
-# Helpers
-# ------------------------------------------------------------------
-
 def _to_hits(points: list[Any]) -> list[SearchHit]:
     return [
         SearchHit(point_id=str(r.id), score=float(r.score), payload=r.payload or {})
         for r in points
     ]
 
-# singleton
+
 @lru_cache(maxsize=1)
 def get_vectorstore() -> VectorStore:
     cfg = get_settings().vectorstore
@@ -244,8 +231,9 @@ def get_vectorstore() -> VectorStore:
         distance=cfg.distance,
         api_key=cfg.api_key,
     )
-    cls = HybridQdrantStore if get_settings().search.hybrid else QdrantStore
-    return cls(**kwargs)
+    if get_settings().search.hybrid:
+        return HybridQdrantStore(sparse_encoder=get_sparse_encoder(), **kwargs)
+    return QdrantStore(**kwargs)
 
 
 def reset_vectorstore_cache() -> None:
