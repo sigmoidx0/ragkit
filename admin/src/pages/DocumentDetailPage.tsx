@@ -1,9 +1,9 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { DocumentsApi } from "@/api/endpoints";
-import { Badge, Button, Card, CardHeader, FormField, Input, SectionHeading, formatBytes } from "@/components/ui";
+import { Badge, Button, Card, CardHeader, FormField, Input, SectionHeading, Textarea, formatBytes } from "@/components/ui";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { MarkdownPreview } from "@/components/MarkdownPreview";
 import { useService } from "@/services/ServiceProvider";
@@ -26,13 +26,21 @@ export default function DocumentDetailPage() {
   const [showMarkdown, setShowMarkdown] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
+  const [editTitle, setEditTitle] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+
+  useEffect(() => {
+    if (data) {
+      setEditTitle(data.title);
+      setEditDescription(data.description ?? "");
+    }
+  }, [data]);
+
   const markdownQuery = useQuery({
     queryKey: ["document-markdown", service?.id, id],
     queryFn: () => DocumentsApi.previewText(service!.id, id),
     enabled: showMarkdown && service != null && Number.isFinite(id),
   });
-  const [replaceFile, setReplaceFile] = useState<File | null>(null);
-  const [replacing, setReplacing] = useState(false);
 
   const deleteDoc = useMutation({
     mutationFn: () => DocumentsApi.remove(service!.id, id),
@@ -43,26 +51,18 @@ export default function DocumentDetailPage() {
     onError: (e) => toast.error(e instanceof Error ? e.message : "Delete failed"),
   });
 
-  const onReplace = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!replaceFile) {
-      toast.error("Choose a file");
-      return;
-    }
-    setReplacing(true);
-    try {
-      const fd = new FormData();
-      fd.set("file", replaceFile);
-      await DocumentsApi.replace(service!.id, id, fd);
-      setReplaceFile(null);
+  const updateMeta = useMutation({
+    mutationFn: () =>
+      DocumentsApi.update(service!.id, id, {
+        title: editTitle || undefined,
+        description: editDescription || undefined,
+      }),
+    onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["document", service?.id, id] });
-      toast.success("File replaced and re-indexing started");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Replace failed");
-    } finally {
-      setReplacing(false);
-    }
-  };
+      toast.success("Saved");
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Save failed"),
+  });
 
   if (isLoading) return <div>Loading…</div>;
   if (!data) return <div>Document not found.</div>;
@@ -70,6 +70,9 @@ export default function DocumentDetailPage() {
   const isPdf =
     data.mime_type === "application/pdf" || data.source_filename.toLowerCase().endsWith(".pdf");
   const isText = /^text\//.test(data.mime_type);
+
+  const metaDirty =
+    editTitle !== data.title || editDescription !== (data.description ?? "");
 
   return (
     <div className="space-y-6">
@@ -159,19 +162,30 @@ export default function DocumentDetailPage() {
       )}
 
       <Card className="p-5">
-        <SectionHeading className="mb-3">Replace file</SectionHeading>
-        <form onSubmit={onReplace} className="flex flex-wrap items-end gap-3">
-          <FormField label="New file" htmlFor="rep" className="min-w-[200px] flex-1">
+        <SectionHeading className="mb-3">Edit metadata</SectionHeading>
+        <div className="space-y-3">
+          <FormField label="Title" htmlFor="meta-title">
             <Input
-              id="rep"
-              type="file"
-              onChange={(e) => setReplaceFile(e.target.files?.[0] ?? null)}
+              id="meta-title"
+              value={editTitle}
+              onChange={(e) => setEditTitle(e.target.value)}
             />
           </FormField>
-          <Button type="submit" disabled={replacing}>
-            {replacing ? "Replacing…" : "Replace and re-index"}
+          <FormField label="Description" htmlFor="meta-desc">
+            <Textarea
+              id="meta-desc"
+              rows={3}
+              value={editDescription}
+              onChange={(e) => setEditDescription(e.target.value)}
+            />
+          </FormField>
+          <Button
+            disabled={!metaDirty || updateMeta.isPending}
+            onClick={() => updateMeta.mutate()}
+          >
+            {updateMeta.isPending ? "Saving…" : "Save"}
           </Button>
-        </form>
+        </div>
       </Card>
     </div>
   );

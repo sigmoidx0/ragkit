@@ -1,4 +1,4 @@
-"""Documents API: one file per document, replace supported."""
+"""Documents API: upload, metadata update, delete. File content is immutable after upload."""
 
 from __future__ import annotations
 
@@ -13,12 +13,12 @@ from pydantic import TypeAdapter, ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.api.deps import DbDep, ServiceAdminDep, ServiceMemberDep, ServiceWriterDep
+from app.api.deps import DbDep, ServiceMemberDep, ServiceWriterDep
 from app.db.models import Document, DocumentStatus, Service
-from app.ingest.loaders import guess_mime_type, convert_to_documents
-from app.schemas.documents import AnyChunkConfig, DocumentListResponse, DocumentOut
+from app.ingest.loaders import convert_to_documents, guess_mime_type
+from app.schemas.documents import AnyChunkConfig, DocumentListResponse, DocumentOut, DocumentUpdate
 from app.services.documents import delete_document, delete_document_dir, save_document_file
-from app.services.indexing import index_document, clear_document_index
+from app.services.indexing import index_document
 from app.storage import get_storage
 
 logger = logging.getLogger(__name__)
@@ -131,45 +131,23 @@ def get_document(service_id: int, document_id: int, db: DbDep, _membership: Serv
     return DocumentOut.model_validate(document)
 
 
-@router.post("/{document_id}/replace", response_model=DocumentOut)
-def replace_document(
+@router.patch("/{document_id}", response_model=DocumentOut)
+def update_document(
     service_id: int,
     document_id: int,
+    payload: DocumentUpdate,
     _writer: ServiceWriterDep,
     db: TxDbDep,
-    file: UploadFile = File(...),
-    chunk_config: str | None = Form(None),
 ) -> DocumentOut:
     document = db.execute(
         select(Document).where(Document.id == document_id, Document.service_id == service_id)
     ).scalar_one_or_none()
     if not document:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "document not found")
-    if not file.filename:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "file is required")
-
-    clear_document_index(document)
-    delete_document_dir(document_id)
-
-    parsed_chunk_config = _parse_chunk_config(chunk_config)
-    save_document_file(document, file.file, file.filename, file.content_type)
-    document.chunk_config = parsed_chunk_config
-    document.status = DocumentStatus.pending
-    document.error = None
-    db.flush()
-
-    try:
-        with get_storage().as_local_path(document.file_path) as path:
-            docs = convert_to_documents(path)
-    except Exception as e:
-        logger.exception("file conversion failed for document %s", document_id)
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"conversion failed: {e}") from e
-
-    try:
-        index_document(db, document, docs)
-    except Exception as e:
-        logger.exception("indexing failed for document %s", document_id)
-        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, f"indexing failed: {e}") from e
+    if payload.title is not None:
+        document.title = payload.title
+    if payload.description is not None:
+        document.description = payload.description
     return DocumentOut.model_validate(document)
 
 

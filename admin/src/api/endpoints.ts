@@ -59,8 +59,8 @@ export const DocumentsApi = {
     apiFetch<DocumentSummary>(`/services/${serviceId}/documents/${id}`),
   create: (serviceId: number, fd: FormData) =>
     apiFetch<DocumentSummary>(`/services/${serviceId}/documents`, { formData: fd }),
-  replace: (serviceId: number, id: number, fd: FormData) =>
-    apiFetch<DocumentSummary>(`/services/${serviceId}/documents/${id}/replace`, { formData: fd }),
+  update: (serviceId: number, id: number, body: { title?: string; description?: string }) =>
+    apiFetch<DocumentSummary>(`/services/${serviceId}/documents/${id}`, { method: "PATCH", body }),
   remove: (serviceId: number, id: number) =>
     apiFetch<void>(`/services/${serviceId}/documents/${id}`, { method: "DELETE" }),
   fileUrl: (serviceId: number, id: number) => `/api/services/${serviceId}/documents/${id}/file`,

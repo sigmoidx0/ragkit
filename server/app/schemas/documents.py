@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated, Any, Literal, Union
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.db.models import DocumentStatus
-
 
 # ---------------------------------------------------------------------------
 # Chunk config schemas (discriminated union on `strategy`)
@@ -40,7 +39,7 @@ class TokenChunkConfig(BaseModel):
 
 
 AnyChunkConfig = Annotated[
-    Union[RecursiveChunkConfig, MarkdownHeaderChunkConfig, CharacterChunkConfig, TokenChunkConfig],
+    RecursiveChunkConfig | MarkdownHeaderChunkConfig | CharacterChunkConfig | TokenChunkConfig,
     Field(discriminator="strategy"),
 ]
 
@@ -48,6 +47,11 @@ AnyChunkConfig = Annotated[
 # ---------------------------------------------------------------------------
 # Document schemas
 # ---------------------------------------------------------------------------
+
+class DocumentUpdate(BaseModel):
+    title: str | None = None
+    description: str | None = None
+
 
 class DocumentOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
