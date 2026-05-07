@@ -124,3 +124,80 @@ export interface SearchResponse {
   query: string;
   hits: SearchHit[];
 }
+
+// ---------------------------------------------------------------------------
+// Pipeline types
+// ---------------------------------------------------------------------------
+
+export interface PipelineNodePosition {
+  x: number;
+  y: number;
+}
+
+export interface PipelineNodeData {
+  config: Record<string, unknown>;
+}
+
+export interface PipelineNode {
+  id: string;
+  type: string;
+  position: PipelineNodePosition;
+  data: PipelineNodeData;
+}
+
+export interface PipelineEdge {
+  id: string;
+  source: string;
+  target: string;
+  sourceHandle: string;
+  targetHandle: string;
+}
+
+export interface PipelineGraph {
+  nodes: PipelineNode[];
+  edges: PipelineEdge[];
+}
+
+export type PipelineStatus = "draft" | "active" | "archived";
+
+export interface Pipeline {
+  id: number;
+  service_id: number;
+  name: string;
+  status: PipelineStatus;
+  graph_json: PipelineGraph;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PipelineReadiness {
+  ready: boolean;
+  components: Partial<Record<"embedder" | "reranker", boolean>>;
+}
+
+export interface PipelineRunRequest {
+  query: string;
+  top_k?: number;
+}
+
+export interface PipelineRunResponse {
+  pipeline_id: number;
+  query: string;
+  results: SearchHit[];
+  node_timings: Record<string, number>;
+}
+
+export interface HandleDef {
+  name: string;
+  handle_type: string;
+}
+
+export interface NodeSchemaEntry {
+  label: string;
+  description: string;
+  inputs: HandleDef[];
+  outputs: HandleDef[];
+  config_schema: Record<string, unknown>;
+}
+
+export type PipelineSchema = Record<string, NodeSchemaEntry>;

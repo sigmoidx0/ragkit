@@ -13,10 +13,10 @@ participant "Embedder" as EMB
 participant "VectorStore" as QD
 database "SQLite/PG\n(DB)" as DB
 
-Client -> API : POST /services/{service_id}/documents\n(file, title, description)
+Client -> API : POST /services/{service_id}/documents\n(file, title, description, chunk_config?)
 activate API
 
-API -> DB : INSERT Document\n(status=pending, file_path="")
+API -> DB : INSERT Document\n(status=pending, file_path="", chunk_config=parsed)
 activate DB
 DB --> API : document.id
 deactivate DB
@@ -25,9 +25,17 @@ API -> SVC : save_document_file(document, file, filename, content_type)
 activate SVC
 SVC -> FS : storage.save_document_file(document_id, filename, source)
 activate FS
+note right of FS
+  SHA-256 계산
+  documents/{id}/{safe_filename} 저장
+end note
 FS --> SVC : StoredFile(stored_path, size_bytes, sha256)
 deactivate FS
-note right of SVC : document 필드(file_path, size_bytes,\nsha256)를 직접 업데이트
+note right of SVC
+  document 필드 직접 업데이트
+  (source_filename, mime_type,
+   file_path, size_bytes, sha256)
+end note
 deactivate SVC
 
 API -> DB : flush
@@ -39,16 +47,29 @@ deactivate FS
 
 API -> LDR : convert_to_documents(local_path)
 activate LDR
+note right of LDR
+  확장자 기반 로더 선택
+  (PDF→PyMuPDF, Office→Unstructured, txt→plain)
+end note
 LDR --> API : list[Document]
 deactivate LDR
+
+alt 파일 변환 실패
+  API -> SVC : delete_document_dir(document_id)
+  API --> Client : 422 conversion failed
+end
 
 API -> IDX : index_document(db, document, docs)
 activate IDX
 
 IDX -> DB : flush (status=chunking)
 
-IDX -> ING : strategy.split(docs)
+IDX -> ING : chunk_strategy_from_config(chunk_config).split(docs)
 activate ING
+note right of ING
+  chunk_config 기반 전략 선택
+  (기본값: RecursiveChunkStrategy)
+end note
 ING --> IDX : list[ChunkRecord]
 deactivate ING
 
@@ -61,10 +82,14 @@ deactivate EMB
 
 IDX -> QD : upsert(point_ids, vectors, payloads)
 activate QD
+note right of QD
+  payload: document_id, service_id,
+           ordinal, text, source_metadata
+end note
 QD --> IDX : ok
 deactivate QD
 
-IDX -> DB : flush (status=indexed)
+IDX -> DB : flush (status=indexed, embedding_model=...)
 
 alt 인덱싱 중 예외 발생
   IDX -> QD : delete_points(inserted_point_ids)
@@ -75,8 +100,10 @@ end
 
 deactivate IDX
 
-API -> DB : COMMIT
+API -> DB : COMMIT (TxDbDep)
+activate DB
 DB --> API : ok
+deactivate DB
 
 API --> Client : 201 DocumentOut
 
@@ -99,7 +126,7 @@ participant "indexing.py" as IDX
 participant "VectorStore" as QD
 database "SQLite/PG\n(DB)" as DB
 
-Client -> API : POST /services/{service_id}/documents/{id}/replace\n(file)
+Client -> API : POST /services/{service_id}/documents/{id}/replace\n(file, chunk_config?)
 activate API
 
 API -> DB : GET Document by id
@@ -107,7 +134,7 @@ DB --> API : document
 
 API -> IDX : clear_document_index(document)
 activate IDX
-IDX -> QD : delete_document(document_id)
+IDX -> QD : delete_document(document_id)\n[payload filter]
 QD --> IDX : ok
 deactivate IDX
 
@@ -125,10 +152,13 @@ API -> SVC : save_document_file(document, new_file, filename, content_type)
 activate SVC
 SVC -> FS : storage.save_document_file(document_id, filename, source)
 FS --> SVC : StoredFile
-note right of SVC : document 필드 직접 업데이트
+note right of SVC
+  document 필드 직접 업데이트
+  (file_path, sha256, size_bytes 등)
+end note
 deactivate SVC
 
-API -> DB : flush (status=pending, error=None)
+API -> DB : flush (status=pending, error=None, chunk_config=parsed)
 
 API -> FS : storage.as_local_path(file_path)
 activate FS
@@ -140,9 +170,13 @@ activate LDR
 LDR --> API : list[Document]
 deactivate LDR
 
+alt 파일 변환 실패
+  API --> Client : 422 conversion failed
+end
+
 API -> IDX : index_document(db, document, docs)
 activate IDX
-IDX --> API : (status=indexed)
+IDX --> API : (status=indexed, embedding_model=...)
 deactivate IDX
 
 API -> DB : COMMIT
@@ -175,13 +209,24 @@ DB --> API : document
 
 API -> SVC : delete_document(document)
 activate SVC
+
 SVC -> IDX : clear_document_index(document)
 activate IDX
-IDX -> QD : delete_document(document_id)
+IDX -> QD : delete_document(document_id)\n[payload filter]
+activate QD
 QD --> IDX : ok
+deactivate QD
 deactivate IDX
+
 SVC -> FS : storage.delete_document_dir(document_id)
+activate FS
+note right of FS
+  shutil.rmtree (ignore_errors=True)
+  documents/{id}/ 폴더 전체 삭제
+end note
 FS --> SVC : ok
+deactivate FS
+
 deactivate SVC
 
 API -> DB : db.delete(document)
@@ -197,40 +242,159 @@ newpage
 
 @startuml Search
 
-title POST /services/{service_id}/search — 의미 기반 벡터 검색
+title POST /services/{service_id}/search — 의미 기반 벡터 검색 (LCEL)
 
 actor Client
 participant "FastAPI\n(search.py)" as API
-participant "chain.py\n(rag)" as CHAIN
+participant "chain.py\n(LCEL)" as CHAIN
 participant "Embedder" as EMB
 participant "VectorStore" as QD
+participant "Reranker" as RNK
 database "SQLite/PG\n(DB)" as DB
 
 Client -> API : POST /services/{service_id}/search\n{query, top_k?, document_id?}
+note right of API
+  인증: JWT Bearer 또는
+  X-Service-Token (MCP용)
+end note
 activate API
 
 API -> CHAIN : run_search(db, SearchQuery)
 activate CHAIN
 
-CHAIN -> EMB : embed_query(query)
+note over CHAIN
+  **LCEL 파이프라인**
+  RunnableParallel(query=passthrough, vector=embed)
+    | search
+    | rerank
+    | enrich
+end note
+
+CHAIN -> EMB : embed_query(query.query)
 activate EMB
 EMB --> CHAIN : vector[float]
 deactivate EMB
 
-CHAIN -> QD : search(vector, top_k, service_id, document_id?)
+CHAIN -> QD : search(vector, fetch_k, service_id, document_id?)
 activate QD
-QD --> CHAIN : list[SearchHit]
+note right of QD
+  fetch_k = top_k × reranker.fetch_k_multiplier
+  (reranker 미설정 시 fetch_k = top_k)
+  service_id 필터 + document_id 선택 필터
+  (Qdrant payload index 활용)
+end note
+QD --> CHAIN : list[SearchHit]\n(point_id, score, payload)
 deactivate QD
+
+CHAIN -> RNK : rerank(query, hits, top_k)
+activate RNK
+note right of RNK
+  상위 top_k만 추려서 반환
+  (reranker 미설정 시 PassthroughReranker)
+end note
+RNK --> CHAIN : list[SearchHit] (reranked)
+deactivate RNK
 
 CHAIN -> DB : SELECT Document WHERE id IN (doc_ids)
 activate DB
+note right of DB
+  N+1 방지: 한 번의 IN 쿼리로
+  모든 document title 조회
+end note
 DB --> CHAIN : list[Document]
 deactivate DB
 
-CHAIN --> API : list[EnrichedHit]
+CHAIN --> API : list[EnrichedHit]\n(document_id, document_title,\nordinal, score, text, metadata)
 deactivate CHAIN
 
-API --> Client : 200 SearchResponse
+API --> Client : 200 SearchResponse\n{query, hits[]}
+
+deactivate API
+
+@enduml
+
+newpage
+
+@startuml Pipeline Run
+
+title POST /services/{service_id}/pipelines/{pipeline_id}/run — 파이프라인 실행
+
+actor Client
+participant "FastAPI\n(pipelines.py)" as API
+participant "executor.py\n(pipeline)" as EXEC
+participant "nodes.py\n(pipeline)" as NODES
+participant "Embedder" as EMB
+participant "VectorStore" as QD
+participant "Reranker" as RNK
+database "SQLite/PG\n(DB)" as DB
+
+Client -> API : POST /services/{service_id}/pipelines/{pipeline_id}/run\n{query, top_k?}
+activate API
+
+API -> DB : GET Pipeline by id
+DB --> API : pipeline (graph_json)
+
+API -> EXEC : run_pipeline(graph_json, ExecutionContext)
+activate EXEC
+
+note over EXEC
+  **위상 정렬(TopologicalSorter)로 실행 순서 결정**
+  dep_graph: node_id → set of upstream node_ids
+  각 노드 출력은 state[node_id]에 저장되어 후속 노드에 전달
+end note
+
+EXEC -> NODES : QueryInput.execute(config, inputs, ctx)
+activate NODES
+note right of NODES : ctx.run_inputs["query"] 반환
+NODES --> EXEC : {query: str}
+deactivate NODES
+
+EXEC -> NODES : EmbedNode.execute(config, inputs, ctx)
+activate NODES
+NODES -> EMB : embed_query(query)
+EMB --> NODES : vector[float]
+NODES --> EXEC : {vector: list[float]}
+deactivate NODES
+
+EXEC -> NODES : RetrieveNode.execute(config, inputs, ctx)
+activate NODES
+note right of NODES
+  top_k: config > run_inputs > default
+  fetch_k = top_k × reranker.fetch_k_multiplier
+end note
+NODES -> QD : search(vector, fetch_k, service_id, document_id?)
+QD --> NODES : list[SearchHit]
+NODES --> EXEC : {hits: list[SearchHit]}
+deactivate NODES
+
+EXEC -> NODES : RerankNode.execute(config, inputs, ctx)
+activate NODES
+NODES -> RNK : rerank(query, hits, top_k)
+RNK --> NODES : list[SearchHit] (reranked)
+NODES --> EXEC : {hits: list[SearchHit]}
+deactivate NODES
+
+EXEC -> NODES : EnrichNode.execute(config, inputs, ctx)
+activate NODES
+NODES -> DB : SELECT Document WHERE id IN (doc_ids)
+DB --> NODES : list[Document]
+note right of NODES : SearchHit → EnrichedHit 변환
+NODES --> EXEC : {results: list[EnrichedHit]}
+deactivate NODES
+
+EXEC -> NODES : OutputNode.execute(config, inputs, ctx)
+activate NODES
+note right of NODES : results 수집
+NODES --> EXEC : {results: list[EnrichedHit]}
+deactivate NODES
+
+EXEC --> API : (results, node_timings)
+note right of EXEC
+  node_timings: node_id → ms
+end note
+deactivate EXEC
+
+API --> Client : 200 PipelineRunResponse\n{pipeline_id, query, results[], node_timings{}}
 
 deactivate API
 

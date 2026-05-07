@@ -6,12 +6,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from langchain_core.runnables import RunnableLambda, RunnableParallel, RunnablePassthrough
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.db.models import Document
 from app.embeddings import get_embedder
+from app.rag.enrich import EnrichedHit, enrich_hits
 from app.rag.reranker import get_reranker
 from app.vectorstore import SearchHit, get_vectorstore
 
@@ -24,44 +23,8 @@ class SearchQuery:
     document_id: int | None = None
 
 
-@dataclass
-class EnrichedHit:
-    document_id: int
-    document_title: str | None
-    ordinal: int
-    score: float
-    text: str
-    metadata: dict[str, Any]
-
-
 def _enrich(db: Session, hits: list[SearchHit]) -> list[EnrichedHit]:
-    if not hits:
-        return []
-    doc_ids = {
-        int(h.payload["document_id"])
-        for h in hits
-        if h.payload.get("document_id") is not None
-    }
-    docs: dict[int, Document] = {}
-    if doc_ids:
-        for d in db.execute(select(Document).where(Document.id.in_(doc_ids))).scalars():
-            docs[d.id] = d
-
-    out: list[EnrichedHit] = []
-    for h in hits:
-        p = h.payload or {}
-        doc_id = int(p["document_id"]) if p.get("document_id") is not None else 0
-        out.append(
-            EnrichedHit(
-                document_id=doc_id,
-                document_title=docs[doc_id].title if doc_id in docs else None,
-                ordinal=int(p.get("ordinal", 0)),
-                score=h.score,
-                text=str(p.get("text") or ""),
-                metadata=dict(p.get("source_metadata") or {}),
-            )
-        )
-    return out
+    return enrich_hits(db, hits)
 
 
 def build_search_chain(db: Session):

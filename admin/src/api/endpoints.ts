@@ -3,6 +3,13 @@ import type {
   ChunkPreviewResponse,
   DocumentListResponse,
   DocumentSummary,
+  Pipeline,
+  PipelineGraph,
+  PipelineReadiness,
+  PipelineRunRequest,
+  PipelineRunResponse,
+  PipelineSchema,
+  PipelineStatus,
   SearchResponse,
   Service,
   ServiceMember,
@@ -73,6 +80,28 @@ export const UsersApi = {
 };
 
 export const SearchApi = {
-  run: (serviceId: number, payload: { query: string; top_k?: number; document_id?: number | null }) =>
+  run: (serviceId: number, payload: { query: string; top_k?: number; document_id?: number | null; pipeline_id?: number | null }) =>
     apiFetch<SearchResponse>(`/services/${serviceId}/search`, { body: payload }),
+};
+
+export const PipelineApi = {
+  schema: () => apiFetch<PipelineSchema>("/pipeline-schema"),
+  list: (serviceId: number) =>
+    apiFetch<Pipeline[]>(`/services/${serviceId}/pipelines`),
+  get: (serviceId: number, pipelineId: number) =>
+    apiFetch<Pipeline>(`/services/${serviceId}/pipelines/${pipelineId}`),
+  create: (serviceId: number, body: { name: string; graph_json: PipelineGraph }) =>
+    apiFetch<Pipeline>(`/services/${serviceId}/pipelines`, { body }),
+  update: (serviceId: number, pipelineId: number, body: { name?: string; graph_json?: PipelineGraph }) =>
+    apiFetch<Pipeline>(`/services/${serviceId}/pipelines/${pipelineId}`, { method: "PUT", body }),
+  remove: (serviceId: number, pipelineId: number) =>
+    apiFetch<void>(`/services/${serviceId}/pipelines/${pipelineId}`, { method: "DELETE" }),
+  setStatus: (serviceId: number, pipelineId: number, status: PipelineStatus) =>
+    apiFetch<Pipeline>(`/services/${serviceId}/pipelines/${pipelineId}/status`, { method: "PATCH", body: { status } }),
+  readiness: (serviceId: number, pipelineId: number) =>
+    apiFetch<PipelineReadiness>(`/services/${serviceId}/pipelines/${pipelineId}/readiness`),
+  prepare: (serviceId: number, pipelineId: number) =>
+    apiFetch<{ ready: true }>(`/services/${serviceId}/pipelines/${pipelineId}/prepare`, { body: {} }),
+  run: (serviceId: number, pipelineId: number, body: PipelineRunRequest) =>
+    apiFetch<PipelineRunResponse>(`/services/${serviceId}/pipelines/${pipelineId}/run`, { body }),
 };

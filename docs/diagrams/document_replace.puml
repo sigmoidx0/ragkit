@@ -11,7 +11,7 @@ participant "indexing.py" as IDX
 participant "VectorStore" as QD
 database "SQLite/PG\n(DB)" as DB
 
-Client -> API : POST /services/{service_id}/documents/{id}/replace\n(file)
+Client -> API : POST /services/{service_id}/documents/{id}/replace\n(file, chunk_config?)
 activate API
 
 API -> DB : GET Document by id
@@ -39,10 +39,11 @@ SVC -> FS : storage.save_document_file(document_id, filename, source)
 FS --> SVC : StoredFile
 note right of SVC
   document 필드 직접 업데이트
+  (file_path, sha256, size_bytes 등)
 end note
 deactivate SVC
 
-API -> DB : flush (status=pending, error=None)
+API -> DB : flush (status=pending, error=None, chunk_config=parsed)
 
 API -> FS : storage.as_local_path(file_path)
 activate FS
@@ -54,9 +55,13 @@ activate LDR
 LDR --> API : list[Document]
 deactivate LDR
 
+alt 파일 변환 실패
+  API --> Client : 422 conversion failed
+end
+
 API -> IDX : index_document(db, document, docs)
 activate IDX
-IDX --> API : (status=indexed)
+IDX --> API : (status=indexed, embedding_model=...)
 deactivate IDX
 
 API -> DB : COMMIT

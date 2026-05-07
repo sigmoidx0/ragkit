@@ -1,0 +1,84 @@
+@startuml Pipeline Run
+
+title POST /services/{service_id}/pipelines/{pipeline_id}/run — 파이프라인 실행
+
+actor Client
+participant "FastAPI\n(pipelines.py)" as API
+participant "executor.py\n(pipeline)" as EXEC
+participant "nodes.py\n(pipeline)" as NODES
+participant "Embedder" as EMB
+participant "VectorStore" as QD
+participant "Reranker" as RNK
+database "SQLite/PG\n(DB)" as DB
+
+Client -> API : POST /services/{service_id}/pipelines/{pipeline_id}/run\n{query, top_k?}
+activate API
+
+API -> DB : GET Pipeline by id
+DB --> API : pipeline (graph_json)
+
+API -> EXEC : run_pipeline(graph_json, ExecutionContext)
+activate EXEC
+
+note over EXEC
+  **위상 정렬(TopologicalSorter)로 실행 순서 결정**
+  dep_graph: node_id → set of upstream node_ids
+  각 노드 출력은 state[node_id]에 저장되어 후속 노드에 전달
+end note
+
+EXEC -> NODES : QueryInput.execute(config, inputs, ctx)
+activate NODES
+note right of NODES : ctx.run_inputs["query"] 반환
+NODES --> EXEC : {query: str}
+deactivate NODES
+
+EXEC -> NODES : EmbedNode.execute(config, inputs, ctx)
+activate NODES
+NODES -> EMB : embed_query(query)
+EMB --> NODES : vector[float]
+NODES --> EXEC : {vector: list[float]}
+deactivate NODES
+
+EXEC -> NODES : RetrieveNode.execute(config, inputs, ctx)
+activate NODES
+note right of NODES
+  top_k: config > run_inputs > default
+  fetch_k = top_k × reranker.fetch_k_multiplier
+end note
+NODES -> QD : search(vector, fetch_k, service_id, document_id?)
+QD --> NODES : list[SearchHit]
+NODES --> EXEC : {hits: list[SearchHit]}
+deactivate NODES
+
+EXEC -> NODES : RerankNode.execute(config, inputs, ctx)
+activate NODES
+NODES -> RNK : rerank(query, hits, top_k)
+RNK --> NODES : list[SearchHit] (reranked)
+NODES --> EXEC : {hits: list[SearchHit]}
+deactivate NODES
+
+EXEC -> NODES : EnrichNode.execute(config, inputs, ctx)
+activate NODES
+NODES -> DB : SELECT Document WHERE id IN (doc_ids)
+DB --> NODES : list[Document]
+note right of NODES : SearchHit → EnrichedHit 변환
+NODES --> EXEC : {results: list[EnrichedHit]}
+deactivate NODES
+
+EXEC -> NODES : OutputNode.execute(config, inputs, ctx)
+activate NODES
+note right of NODES : results 수집
+NODES --> EXEC : {results: list[EnrichedHit]}
+deactivate NODES
+
+EXEC --> API : (results, node_timings)
+note right of EXEC
+  node_timings: node_id → ms
+end note
+deactivate EXEC
+
+API --> Client : 200 PipelineRunResponse\n{pipeline_id, query, results[], node_timings{}}
+
+deactivate API
+
+@enduml

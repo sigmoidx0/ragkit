@@ -53,6 +53,17 @@ function BeakerIcon() {
   );
 }
 
+function FlowIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className="h-full w-full">
+      <circle cx="5" cy="12" r="2.5" />
+      <circle cx="19" cy="5" r="2.5" />
+      <circle cx="19" cy="19" r="2.5" />
+      <path d="M7.5 12h4M13.5 5H10a2 2 0 00-2 2v3M10 17a2 2 0 002 2h1.5" strokeWidth="1.5" stroke="currentColor" fill="none" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function HamburgerIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5">
@@ -89,6 +100,7 @@ const PAGE_NAMES: Record<string, string> = {
   "/documents": "Documents",
   "/search": "Search",
   "/playground": "Playground",
+  "/pipeline": "Pipeline Builder",
   "/members": "Members",
   "/users": "Users",
   "/services": "Services",
@@ -181,7 +193,10 @@ function SidebarContent({
       <nav className="flex-1 space-y-1 px-4 py-6">
         <SidebarNavItem to="/documents" icon={<FileIcon />} label="Documents" onClick={onNavClick} />
         <SidebarNavItem to="/search" icon={<SearchIcon />} label="Search" onClick={onNavClick} />
-        <SidebarNavItem to="/playground" icon={<BeakerIcon />} label="Playground" onClick={onNavClick} />
+        <SidebarNavItem to="/pipeline" icon={<FlowIcon />} label="Pipeline" onClick={onNavClick} />
+        {isServiceAdmin && (
+          <SidebarNavItem to="/playground" icon={<BeakerIcon />} label="Playground" onClick={onNavClick} />
+        )}
 
         {(isServiceAdmin || isSuperAdmin) && (
           <>

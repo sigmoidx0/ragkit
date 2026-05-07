@@ -7,6 +7,7 @@ participant "FastAPI\n(search.py)" as API
 participant "chain.py\n(LCEL)" as CHAIN
 participant "Embedder" as EMB
 participant "VectorStore" as QD
+participant "Reranker" as RNK
 database "SQLite/PG\n(DB)" as DB
 
 Client -> API : POST /services/{service_id}/search\n{query, top_k?, document_id?}
@@ -23,6 +24,7 @@ note over CHAIN
   **LCEL 파이프라인**
   RunnableParallel(query=passthrough, vector=embed)
     | search
+    | rerank
     | enrich
 end note
 
@@ -31,15 +33,25 @@ activate EMB
 EMB --> CHAIN : vector[float]
 deactivate EMB
 
-CHAIN -> QD : search(vector, top_k, service_id, document_id?)
+CHAIN -> QD : search(vector, fetch_k, service_id, document_id?)
 activate QD
 note right of QD
-  service_id 필터 적용
-  document_id 있으면 추가 payload filter
+  fetch_k = top_k × reranker.fetch_k_multiplier
+  (reranker 미설정 시 fetch_k = top_k)
+  service_id 필터 + document_id 선택 필터
   (Qdrant payload index 활용)
 end note
 QD --> CHAIN : list[SearchHit]\n(point_id, score, payload)
 deactivate QD
+
+CHAIN -> RNK : rerank(query, hits, top_k)
+activate RNK
+note right of RNK
+  상위 top_k만 추려서 반환
+  (reranker 미설정 시 PassthroughReranker)
+end note
+RNK --> CHAIN : list[SearchHit] (reranked)
+deactivate RNK
 
 CHAIN -> DB : SELECT Document WHERE id IN (doc_ids)
 activate DB

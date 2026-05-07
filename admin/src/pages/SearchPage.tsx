@@ -1,8 +1,8 @@
 import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { SearchApi } from "@/api/endpoints";
+import { PipelineApi, SearchApi } from "@/api/endpoints";
 import { Button, Card, FormField, Input } from "@/components/ui";
 import { useService } from "@/services/ServiceProvider";
 import type { SearchResponse } from "@/api/types";
@@ -12,7 +12,15 @@ export default function SearchPage() {
   const [query, setQuery] = useState("");
   const [topK, setTopK] = useState(5);
   const [docId, setDocId] = useState("");
+  const [pipelineId, setPipelineId] = useState<number | null>(null);
   const [result, setResult] = useState<SearchResponse | null>(null);
+
+  const { data: activePipelines = [] } = useQuery({
+    queryKey: ["pipelines-active", service?.id],
+    queryFn: () => PipelineApi.list(service!.id),
+    enabled: !!service,
+    staleTime: 30_000,
+  });
 
   const run = useMutation({
     mutationFn: () =>
@@ -20,6 +28,7 @@ export default function SearchPage() {
         query,
         top_k: topK,
         document_id: docId.trim() ? Number(docId) : undefined,
+        pipeline_id: pipelineId,
       }),
     onSuccess: (r) => setResult(r),
     onError: (e) => toast.error(e instanceof Error ? e.message : "Search failed"),
@@ -66,6 +75,21 @@ export default function SearchPage() {
               placeholder="e.g. 1"
             />
           </FormField>
+          {activePipelines.length > 0 && (
+            <FormField label="Pipeline (optional)" htmlFor="pipeline" className="md:col-span-2">
+              <select
+                id="pipeline"
+                value={pipelineId ?? ""}
+                onChange={(e) => setPipelineId(e.target.value ? Number(e.target.value) : null)}
+                className="w-full rounded-xl border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-800 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-teal-300"
+              >
+                <option value="">Default (no pipeline)</option>
+                {activePipelines.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            </FormField>
+          )}
           <div className="md:col-span-4">
             <Button type="submit" disabled={run.isPending || !service}>
               {run.isPending ? "Searching…" : "Search"}

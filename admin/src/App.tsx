@@ -1,7 +1,7 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { Toaster } from "sonner";
 import Layout from "./components/Layout";
-import { RequireAuth } from "./auth/guards";
+import { RequireAuth, RequireServiceAdmin } from "./auth/guards";
 import { ServiceProvider } from "./services/ServiceProvider";
 import LoginPage from "./pages/LoginPage";
 import DocumentsPage from "./pages/DocumentsPage";
@@ -11,6 +11,7 @@ import ServicesPage from "./pages/ServicesPage";
 import MembersPage from "./pages/MembersPage";
 import UsersPage from "./pages/UsersPage";
 import PlaygroundPage from "./pages/PlaygroundPage";
+import PipelineBuilderPage from "./pages/PipelineBuilderPage";
 
 export default function App() {
   return (
@@ -34,7 +35,8 @@ export default function App() {
         <Route path="/services" element={<ServicesPage />} />
         <Route path="/members" element={<MembersPage />} />
         <Route path="/users" element={<UsersPage />} />
-        <Route path="/playground" element={<PlaygroundPage />} />
+        <Route path="/playground" element={<RequireServiceAdmin><PlaygroundPage /></RequireServiceAdmin>} />
+        <Route path="/pipeline" element={<PipelineBuilderPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
