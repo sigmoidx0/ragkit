@@ -103,7 +103,7 @@ class SearchSection(BaseModel):
 
 
 class AdminBootstrapSection(BaseModel):
-    email: str = "admin@example.com"
+    email: str = "platform.admin@ragkit.io"
     password_env: str = "INITIAL_ADMIN_PASSWORD"
 
 
