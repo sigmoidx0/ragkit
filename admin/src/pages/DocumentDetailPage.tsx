@@ -25,6 +25,7 @@ export default function DocumentDetailPage() {
   const [showPreview, setShowPreview] = useState(false);
   const [showMarkdown, setShowMarkdown] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null);
 
   const [editTitle, setEditTitle] = useState("");
   const [editDescription, setEditDescription] = useState("");
@@ -35,6 +36,33 @@ export default function DocumentDetailPage() {
       setEditDescription(data.description ?? "");
     }
   }, [data]);
+
+  useEffect(() => {
+    if (!showPreview || !service) return;
+    let cancelled = false;
+    void DocumentsApi.fetchFile(service.id, id).then(({ blob }) => {
+      if (cancelled) return;
+      setPreviewBlobUrl(URL.createObjectURL(blob));
+    });
+    return () => {
+      cancelled = true;
+      setPreviewBlobUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return null;
+      });
+    };
+  }, [showPreview, service?.id, id]);
+
+  const handleDownload = async () => {
+    if (!service) return;
+    const { blob, filename } = await DocumentsApi.fetchFile(service.id, id);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename ?? data?.source_filename ?? "";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const markdownQuery = useQuery({
     queryKey: ["document-markdown", service?.id, id],
@@ -109,12 +137,9 @@ export default function DocumentDetailPage() {
           )}
         </div>
         <div className="flex flex-wrap gap-2">
-          <a
-            href={service ? DocumentsApi.fileUrl(service.id, id) : "#"}
-            className="inline-flex items-center justify-center rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium hover:bg-gray-100 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600"
-          >
+          <Button variant="secondary" size="sm" onClick={() => void handleDownload()}>
             Download
-          </a>
+          </Button>
           <Button variant="secondary" size="sm" onClick={() => setShowPreview((v) => !v)}>
             {showPreview ? "Hide preview" : "Preview"}
           </Button>
@@ -150,7 +175,7 @@ export default function DocumentDetailPage() {
           {isPdf || isText ? (
             <iframe
               title="preview"
-              src={service ? DocumentsApi.fileUrl(service.id, id) : ""}
+              src={previewBlobUrl ?? ""}
               className="h-[70vh] w-full border-0 bg-white"
             />
           ) : (

@@ -76,3 +76,21 @@ export async function apiFetch<T>(path: string, opts: RequestOptions = {}): Prom
   }
   return json as T;
 }
+
+export async function apiFetchBlob(path: string): Promise<{ blob: Blob; filename?: string }> {
+  const headers: Record<string, string> = {};
+  const token = getToken();
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  const resp = await fetch(`/api${path}`, { headers });
+
+  if (!resp.ok) {
+    if (resp.status === 401) setToken(null);
+    throw new ApiError(resp.status, resp.statusText);
+  }
+
+  const disposition = resp.headers.get("content-disposition");
+  const filename = disposition?.match(/filename="?([^"]+)"?/)?.[1] ?? undefined;
+  const blob = await resp.blob();
+  return { blob, filename };
+}

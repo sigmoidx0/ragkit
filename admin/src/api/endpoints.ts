@@ -1,4 +1,4 @@
-import { apiFetch } from "./client";
+import { apiFetch, apiFetchBlob } from "./client";
 import type {
   ChunkPreviewResponse,
   DocumentListResponse,
@@ -63,7 +63,8 @@ export const DocumentsApi = {
     apiFetch<DocumentSummary>(`/services/${serviceId}/documents/${id}`, { method: "PATCH", body }),
   remove: (serviceId: number, id: number) =>
     apiFetch<void>(`/services/${serviceId}/documents/${id}`, { method: "DELETE" }),
-  fileUrl: (serviceId: number, id: number) => `/api/services/${serviceId}/documents/${id}/file`,
+  fetchFile: (serviceId: number, id: number) =>
+    apiFetchBlob(`/services/${serviceId}/documents/${id}/file`),
   previewText: (serviceId: number, id: number) =>
     apiFetch<{ text: string }>(`/services/${serviceId}/documents/${id}/preview-text`),
 };
