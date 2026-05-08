@@ -77,6 +77,57 @@ export async function apiFetch<T>(path: string, opts: RequestOptions = {}): Prom
   return json as T;
 }
 
+export interface SSEEvent {
+  event: string;
+  data: string;
+}
+
+export async function* apiSSE(
+  path: string,
+  body: unknown,
+  signal?: AbortSignal,
+): AsyncGenerator<SSEEvent> {
+  const token = getToken();
+  const resp = await fetch(`/api${path}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body),
+    signal,
+  });
+
+  if (!resp.ok) {
+    if (resp.status === 401) setToken(null);
+    const text = await resp.text();
+    throw new ApiError(resp.status, text);
+  }
+
+  const reader = resp.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let currentEvent = "message";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    for (const line of lines) {
+      if (line.startsWith("event: ")) {
+        currentEvent = line.slice(7).trim();
+      } else if (line.startsWith("data: ")) {
+        yield { event: currentEvent, data: line.slice(6) };
+        currentEvent = "message";
+      } else if (line === "") {
+        currentEvent = "message";
+      }
+    }
+  }
+}
+
 export async function apiFetchBlob(path: string): Promise<{ blob: Blob; filename?: string }> {
   const headers: Record<string, string> = {};
   const token = getToken();

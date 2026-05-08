@@ -1,5 +1,6 @@
-import { apiFetch, apiFetchBlob } from "./client";
+import { apiFetch, apiFetchBlob, apiSSE } from "./client";
 import type {
+  ChatMessage,
   ChunkPreviewResponse,
   DocumentListResponse,
   DocumentSummary,
@@ -14,6 +15,7 @@ import type {
   Service,
   ServiceMember,
   ServiceWithRole,
+  SystemPrompt,
   TokenResponse,
   User,
 } from "./types";
@@ -105,4 +107,22 @@ export const PipelineApi = {
     apiFetch<{ ready: true }>(`/services/${serviceId}/pipelines/${pipelineId}/prepare`, { body: {} }),
   run: (serviceId: number, pipelineId: number, body: PipelineRunRequest) =>
     apiFetch<PipelineRunResponse>(`/services/${serviceId}/pipelines/${pipelineId}/run`, { body }),
+};
+
+export const SystemPromptsApi = {
+  list: (serviceId: number) =>
+    apiFetch<SystemPrompt[]>(`/services/${serviceId}/system-prompts`),
+  create: (serviceId: number, body: { name: string; content: string }) =>
+    apiFetch<SystemPrompt>(`/services/${serviceId}/system-prompts`, { body }),
+  update: (serviceId: number, id: number, body: { name?: string; content?: string }) =>
+    apiFetch<SystemPrompt>(`/services/${serviceId}/system-prompts/${id}`, { method: "PATCH", body }),
+  activate: (serviceId: number, id: number) =>
+    apiFetch<SystemPrompt>(`/services/${serviceId}/system-prompts/${id}/activate`, { body: {} }),
+  remove: (serviceId: number, id: number) =>
+    apiFetch<void>(`/services/${serviceId}/system-prompts/${id}`, { method: "DELETE" }),
+};
+
+export const ChatApi = {
+  stream: (serviceId: number, messages: ChatMessage[], topK?: number, signal?: AbortSignal) =>
+    apiSSE(`/services/${serviceId}/chat`, { messages, top_k: topK }, signal),
 };

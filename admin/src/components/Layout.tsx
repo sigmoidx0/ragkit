@@ -64,6 +64,14 @@ function FlowIcon() {
   );
 }
 
+function ChatIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className="h-full w-full">
+      <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z" />
+    </svg>
+  );
+}
+
 function HamburgerIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5">
@@ -99,6 +107,7 @@ function MoonIcon() {
 const PAGE_NAMES: Record<string, string> = {
   "/documents": "Documents",
   "/search": "Search",
+  "/chat": "Chat",
   "/playground": "Playground",
   "/pipeline": "Pipeline Builder",
   "/members": "Members",
@@ -193,6 +202,7 @@ function SidebarContent({
       <nav className="flex-1 space-y-1 px-4 py-6">
         <SidebarNavItem to="/documents" icon={<FileIcon />} label="Documents" onClick={onNavClick} />
         <SidebarNavItem to="/search" icon={<SearchIcon />} label="Search" onClick={onNavClick} />
+        <SidebarNavItem to="/chat" icon={<ChatIcon />} label="Chat" onClick={onNavClick} />
         <SidebarNavItem to="/pipeline" icon={<FlowIcon />} label="Pipeline" onClick={onNavClick} />
         {isServiceAdmin && (
           <SidebarNavItem to="/playground" icon={<BeakerIcon />} label="Playground" onClick={onNavClick} />

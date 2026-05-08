@@ -12,6 +12,7 @@ import MembersPage from "./pages/MembersPage";
 import UsersPage from "./pages/UsersPage";
 import PlaygroundPage from "./pages/PlaygroundPage";
 import PipelineBuilderPage from "./pages/PipelineBuilderPage";
+import ChatPage from "./pages/ChatPage";
 
 export default function App() {
   return (
@@ -37,6 +38,7 @@ export default function App() {
         <Route path="/users" element={<UsersPage />} />
         <Route path="/playground" element={<RequireServiceAdmin><PlaygroundPage /></RequireServiceAdmin>} />
         <Route path="/pipeline" element={<PipelineBuilderPage />} />
+        <Route path="/chat" element={<ChatPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

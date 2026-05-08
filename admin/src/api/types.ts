@@ -201,3 +201,54 @@ export interface NodeSchemaEntry {
 }
 
 export type PipelineSchema = Record<string, NodeSchemaEntry>;
+
+// ---------------------------------------------------------------------------
+// System prompts
+// ---------------------------------------------------------------------------
+
+export interface SystemPrompt {
+  id: number;
+  service_id: number;
+  name: string;
+  content: string;
+  is_active: boolean;
+  created_by: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// ---------------------------------------------------------------------------
+// Chat / agent SSE
+// ---------------------------------------------------------------------------
+
+export type ChatRole = "user" | "assistant" | "system";
+
+export interface ChatMessage {
+  role: ChatRole;
+  content: string;
+}
+
+export interface SourceItem {
+  index: number;
+  document_id: number;
+  title: string | null;
+  snippet: string;
+  score: number;
+}
+
+export interface AgentStep {
+  type: "tool_call" | "observation";
+  tool: string;
+  input?: string;
+  output?: SourceItem[];
+}
+
+export interface ChatTurn {
+  id: string;
+  role: ChatRole;
+  content: string;
+  agentSteps: AgentStep[];
+  sources: SourceItem[];
+  isStreaming: boolean;
+  error?: string;
+}
