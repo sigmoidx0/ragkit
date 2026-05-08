@@ -26,13 +26,11 @@ class SourceItem(BaseModel):
     score: float
 
 
-class RetrievalStartEvent(BaseModel):
-    query: str
-    top_k: int
-
-
-class RetrievalCompleteEvent(BaseModel):
-    sources: list[SourceItem]
+class AgentStepEvent(BaseModel):
+    type: Literal["tool_call", "observation"]
+    tool: str
+    input: str | None = None          # populated on tool_call
+    output: list[SourceItem] | None = None  # populated on observation
 
 
 class TokenEvent(BaseModel):

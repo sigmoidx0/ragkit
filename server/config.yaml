@@ -118,6 +118,10 @@ llm:
   vllm:
     base_url: http://localhost:8000/v1
 
+agent:
+  # Maximum number of tool-call rounds before the agent is forced to answer.
+  max_iterations: 5
+
 chat:
   enabled: true
   # Number of retrieved chunks injected into the prompt when top_k is not specified.

@@ -125,6 +125,10 @@ class LlmSection(BaseModel):
     vllm: LlmVllmCfg = Field(default_factory=LlmVllmCfg)
 
 
+class AgentSection(BaseModel):
+    max_iterations: int = 5
+
+
 class ChatSection(BaseModel):
     enabled: bool = True
     default_top_k: int = 5
@@ -147,6 +151,7 @@ class Settings(BaseModel):
     admin_bootstrap: AdminBootstrapSection = Field(default_factory=AdminBootstrapSection)
     llm: LlmSection = Field(default_factory=LlmSection)
     chat: ChatSection = Field(default_factory=ChatSection)
+    agent: AgentSection = Field(default_factory=AgentSection)
 
 
 def _find_dotenv_paths() -> list[Path]:
