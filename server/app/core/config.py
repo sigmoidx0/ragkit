@@ -107,6 +107,34 @@ class AdminBootstrapSection(BaseModel):
     password_env: str = "INITIAL_ADMIN_PASSWORD"
 
 
+class LlmOllamaCfg(BaseModel):
+    base_url: str = "http://localhost:11434"
+
+
+class LlmVllmCfg(BaseModel):
+    base_url: str = ""
+
+
+class LlmSection(BaseModel):
+    provider: Literal["openai", "anthropic", "ollama", "vllm"] = "ollama"
+    model: str = "qwen2.5:1.5b"
+    api_key: str | None = None
+    temperature: float = 0.0
+    max_tokens: int = 2048
+    ollama: LlmOllamaCfg = Field(default_factory=LlmOllamaCfg)
+    vllm: LlmVllmCfg = Field(default_factory=LlmVllmCfg)
+
+
+class ChatSection(BaseModel):
+    enabled: bool = True
+    default_top_k: int = 5
+    fallback_system_prompt: str = (
+        "You are a helpful assistant. Answer questions based on the provided context. "
+        "Cite sources inline using [N] notation (e.g. \"According to the policy [1], ...\"). "
+        "If the context does not contain enough information, say so clearly."
+    )
+
+
 class Settings(BaseModel):
     server: ServerSection = Field(default_factory=ServerSection)
     storage: StorageSection = Field(default_factory=StorageSection)
@@ -117,6 +145,8 @@ class Settings(BaseModel):
     ingest: IngestSection = Field(default_factory=IngestSection)
     search: SearchSection = Field(default_factory=SearchSection)
     admin_bootstrap: AdminBootstrapSection = Field(default_factory=AdminBootstrapSection)
+    llm: LlmSection = Field(default_factory=LlmSection)
+    chat: ChatSection = Field(default_factory=ChatSection)
 
 
 def _find_dotenv_paths() -> list[Path]:
@@ -190,6 +220,10 @@ def _apply_env_overrides(raw: dict[str, Any]) -> dict[str, Any]:
     s3_region = os.getenv("AWS_DEFAULT_REGION")
     if s3_region:
         raw.setdefault("storage", {}).setdefault("s3", {})["region"] = s3_region
+
+    llm_key = os.getenv("LLM_API_KEY")
+    if llm_key:
+        raw.setdefault("llm", {})["api_key"] = llm_key
 
     return raw
 

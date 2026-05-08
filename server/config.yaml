@@ -100,3 +100,30 @@ admin_bootstrap:
   email: admin@example.com
   # Password is read from this environment variable — never set it here.
   password_env: INITIAL_ADMIN_PASSWORD
+
+llm:
+  # Which LLM backend to use for /chat. Pick one of: ollama | openai | anthropic | vllm
+  provider: ollama
+  # Model name. Examples:
+  #   ollama:    qwen2.5:1.5b  |  llama3.2:1b  |  phi3.5
+  #   openai:    gpt-4o-mini
+  #   anthropic: claude-haiku-4-5-20251001
+  #   vllm:      <model-name-served-by-vllm>
+  model: qwen2.5:1.5b
+  temperature: 0.0
+  max_tokens: 2048
+  # API key: set LLM_API_KEY env var (not needed for ollama/vllm)
+  ollama:
+    base_url: http://localhost:11434
+  vllm:
+    base_url: http://localhost:8000/v1
+
+chat:
+  enabled: true
+  # Number of retrieved chunks injected into the prompt when top_k is not specified.
+  default_top_k: 5
+  # Used when a service has no active system prompt configured in the DB.
+  fallback_system_prompt: >
+    You are a helpful assistant. Answer questions based on the provided context.
+    Cite sources inline using [N] notation (e.g. "According to the policy [1], ...").
+    If the context does not contain enough information, say so clearly.
