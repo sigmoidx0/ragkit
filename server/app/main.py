@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.agent.checkpoint import checkpointer_lifespan
 from app.api import auth, chat, documents, health, ingest, pipelines, search, services, sessions, system_prompts, users
 from app.core.config import get_settings
 from app.core.logging import configure_logging
@@ -41,7 +42,8 @@ async def lifespan(_app: FastAPI):
         get_vectorstore().ensure_collection()
     except Exception:
         logger.exception("could not prepare Qdrant collection; continuing")
-    yield
+    async with checkpointer_lifespan():
+        yield
 
 
 def create_app() -> FastAPI:

@@ -2,18 +2,17 @@
 
 from __future__ import annotations
 
-import json
-
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy import func, select, update
+from langchain_core.messages import AIMessage, HumanMessage
+from sqlalchemy import select
 
-from app.agent.executor import agent_stream
+from app.agent.checkpoint import get_checkpointer
+from app.agent.executor import session_agent_stream
 from app.api.deps import CurrentUser, DbDep, ServiceMemberDep
 from app.core.config import get_settings
-from app.db.models import ChatSession, SessionMessage
+from app.db.models import ChatSession
 from app.schemas.chat import (
-    ChatMessage,
     ChatSessionCreate,
     ChatSessionResponse,
     SessionChatRequest,
@@ -34,20 +33,6 @@ def _get_session_or_404(db: DbDep, session_id: int, user_id: int, service_id: in
     if not session:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "session not found")
     return session
-
-
-def _parse_token_delta(sse_chunk: str) -> str | None:
-    """Extract delta text from a `event: token` SSE chunk."""
-    lines = sse_chunk.strip().split("\n")
-    if not lines or lines[0] != "event: token":
-        return None
-    for line in lines[1:]:
-        if line.startswith("data:"):
-            try:
-                return json.loads(line[5:].strip()).get("delta")
-            except Exception:
-                pass
-    return None
 
 
 # ── Session CRUD ─────────────────────────────────────────────────────────────
@@ -86,20 +71,27 @@ def list_sessions(
     "/services/{service_id}/sessions/{session_id}/messages",
     response_model=list[SessionMessageResponse],
 )
-def list_messages(
+async def list_messages(
     service_id: int,
     session_id: int,
     _membership: ServiceMemberDep,
     user: CurrentUser,
     db: DbDep,
-) -> list[SessionMessage]:
-    session = _get_session_or_404(db, session_id, user.id, service_id)
-    rows = db.execute(
-        select(SessionMessage)
-        .where(SessionMessage.session_id == session.id)
-        .order_by(SessionMessage.id)
-    ).scalars().all()
-    return list(rows)
+) -> list[SessionMessageResponse]:
+    _get_session_or_404(db, session_id, user.id, service_id)
+    cp_tuple = await get_checkpointer().aget_tuple(
+        {"configurable": {"thread_id": str(session_id)}}
+    )
+    if not cp_tuple:
+        return []
+    lc_msgs = cp_tuple.checkpoint.get("channel_values", {}).get("messages", [])
+    result: list[SessionMessageResponse] = []
+    for msg in lc_msgs:
+        if isinstance(msg, HumanMessage):
+            result.append(SessionMessageResponse(role="user", content=str(msg.content)))
+        elif isinstance(msg, AIMessage) and msg.content:
+            result.append(SessionMessageResponse(role="assistant", content=str(msg.content)))
+    return result
 
 
 @router.delete("/services/{service_id}/sessions/{session_id}", status_code=204)
@@ -129,46 +121,10 @@ async def session_chat(
     if not get_settings().chat.enabled:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "chat is disabled")
 
-    session = _get_session_or_404(db, session_id, user.id, service_id)
-
-    # Load conversation history
-    history_rows = db.execute(
-        select(SessionMessage)
-        .where(SessionMessage.session_id == session.id)
-        .order_by(SessionMessage.id)
-    ).scalars().all()
-
-    history = [ChatMessage(role=r.role, content=r.content) for r in history_rows]
-    all_messages = history + [ChatMessage(role="user", content=body.message)]
-
-    # Persist user message before streaming
-    db.add(SessionMessage(session_id=session.id, role="user", content=body.message))
-    db.commit()
-
-    async def _stream_and_save():
-        tokens: list[str] = []
-        try:
-            async for chunk in agent_stream(db, service_id, all_messages, body.top_k, body.filters):
-                yield chunk
-                delta = _parse_token_delta(chunk)
-                if delta:
-                    tokens.append(delta)
-        finally:
-            if tokens:
-                db.add(SessionMessage(
-                    session_id=session.id,
-                    role="assistant",
-                    content="".join(tokens),
-                ))
-                db.execute(
-                    update(ChatSession)
-                    .where(ChatSession.id == session.id)
-                    .values(updated_at=func.now())
-                )
-                db.commit()
+    _get_session_or_404(db, session_id, user.id, service_id)
 
     return StreamingResponse(
-        _stream_and_save(),
+        session_agent_stream(db, service_id, str(session_id), body.message, body.top_k, body.filters),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

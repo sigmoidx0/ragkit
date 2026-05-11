@@ -124,3 +124,80 @@ async def agent_stream(
         return
 
     yield _sse("done", DoneEvent(finish_reason="stop").model_dump())
+
+
+async def session_agent_stream(
+    db: Session,
+    service_id: int,
+    thread_id: str,
+    new_message: str,
+    top_k: int | None = None,
+    filters: dict | None = None,
+) -> AsyncIterator[str]:
+    from app.agent.checkpoint import get_checkpointer
+
+    cfg = get_settings()
+    _top_k = top_k or cfg.chat.default_top_k
+
+    retrieval_tool, sources_store = make_retrieval_tool(db, service_id, _top_k)
+    system_prompt = await asyncio.to_thread(_load_system_prompt, db, service_id)
+
+    llm = get_chat_model()
+    agent = create_react_agent(
+        llm,
+        [retrieval_tool],
+        checkpointer=get_checkpointer(),
+        state_modifier=SystemMessage(content=system_prompt),
+    )
+
+    recursion_limit = cfg.agent.max_iterations * 2 + 1
+    run_config = {
+        "configurable": {"thread_id": thread_id},
+        "recursion_limit": recursion_limit,
+    }
+
+    try:
+        async for event in agent.astream_events(
+            {"messages": [HumanMessage(content=new_message)]},
+            config=run_config,
+            version="v2",
+        ):
+            kind = event["event"]
+            name = event.get("name", "")
+
+            if kind == "on_tool_start" and name == "retrieval":
+                query = event["data"].get("input", {}).get("query", "")
+                yield _sse(
+                    "agent_step",
+                    AgentStepEvent(type="tool_call", tool="retrieval", input=query).model_dump(),
+                )
+
+            elif kind == "on_tool_end" and name == "retrieval":
+                query = event["data"].get("input", {}).get("query", "")
+                sources = sources_store.get(query, [])
+                yield _sse(
+                    "agent_step",
+                    AgentStepEvent(type="observation", tool="retrieval", output=sources).model_dump(),
+                )
+
+            elif kind == "on_chat_model_stream":
+                chunk = event["data"].get("chunk")
+                if not chunk:
+                    continue
+                if getattr(chunk, "tool_call_chunks", None):
+                    continue
+                delta = chunk.content
+                if isinstance(delta, str) and delta:
+                    yield _sse("token", TokenEvent(delta=delta).model_dump())
+                elif isinstance(delta, list):
+                    for block in delta:
+                        if isinstance(block, dict) and block.get("type") == "text":
+                            text = block.get("text", "")
+                            if text:
+                                yield _sse("token", TokenEvent(delta=text).model_dump())
+
+    except Exception as exc:
+        yield _sse("error", ErrorEvent(error=str(exc)).model_dump())
+        return
+
+    yield _sse("done", DoneEvent(finish_reason="stop").model_dump())
