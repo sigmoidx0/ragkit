@@ -25,7 +25,7 @@ async def chat(
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "chat is disabled")
 
     return StreamingResponse(
-        agent_stream(db, service_id, body),
+        agent_stream(db, service_id, body.messages, body.top_k, body.filters),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

@@ -115,7 +115,7 @@ function Sources({ sources }: { sources: SourceItem[] }) {
           <span className="font-medium text-gray-700 dark:text-gray-200">
             {s.title ?? `Document #${s.document_id}`}
           </span>
-          <span className="ml-2 text-gray-400">score {s.score.toFixed(3)}</span>
+          <span className="ml-2 text-gray-400">score {s.score < 0.01 ? s.score.toExponential(2) : s.score.toFixed(3)}</span>
         </div>
       ))}
     </div>

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ChatMessage(BaseModel):
@@ -49,3 +50,34 @@ class DoneEvent(BaseModel):
 
 class ErrorEvent(BaseModel):
     error: str
+
+
+# ── Session schemas ──────────────────────────────────────────────────────────
+
+class ChatSessionCreate(BaseModel):
+    title: str | None = None
+
+
+class ChatSessionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    service_id: int
+    title: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class SessionMessageResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    role: str
+    content: str
+    created_at: datetime
+
+
+class SessionChatRequest(BaseModel):
+    message: str = Field(min_length=1)
+    top_k: int | None = None
+    filters: dict | None = None

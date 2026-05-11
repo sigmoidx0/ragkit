@@ -17,7 +17,7 @@ from app.db.models import SystemPrompt
 from app.llm import get_chat_model
 from app.schemas.chat import (
     AgentStepEvent,
-    ChatRequest,
+    ChatMessage,
     DoneEvent,
     ErrorEvent,
     TokenEvent,
@@ -38,41 +38,43 @@ def _load_system_prompt(db: Session, service_id: int) -> str:
     return row.content if row else get_settings().chat.fallback_system_prompt
 
 
-def _to_lc_messages(
-    system_prompt: str,
-    request: ChatRequest,
-) -> list:
-    msgs: list = [SystemMessage(content=system_prompt)]
-    for msg in request.messages:
+def _to_lc_messages(messages: list[ChatMessage]) -> list:
+    result = []
+    for msg in messages:
         if msg.role == "user":
-            msgs.append(HumanMessage(content=msg.content))
+            result.append(HumanMessage(content=msg.content))
         elif msg.role == "assistant":
-            msgs.append(AIMessage(content=msg.content))
-    return msgs
+            result.append(AIMessage(content=msg.content))
+    return result
 
 
 async def agent_stream(
     db: Session,
     service_id: int,
-    request: ChatRequest,
+    messages: list[ChatMessage],
+    top_k: int | None = None,
+    filters: dict | None = None,
 ) -> AsyncIterator[str]:
     cfg = get_settings()
-    top_k = request.top_k or cfg.chat.default_top_k
+    _top_k = top_k or cfg.chat.default_top_k
 
-    user_messages = [m for m in request.messages if m.role == "user"]
+    user_messages = [m for m in messages if m.role == "user"]
     if not user_messages:
         yield _sse("error", ErrorEvent(error="no user message provided").model_dump())
         return
 
-    retrieval_tool, sources_store = make_retrieval_tool(db, service_id, top_k)
+    retrieval_tool, sources_store = make_retrieval_tool(db, service_id, _top_k)
 
     system_prompt = await asyncio.to_thread(_load_system_prompt, db, service_id)
-    lc_messages = _to_lc_messages(system_prompt, request)
 
     llm = get_chat_model()
-    agent = create_react_agent(llm, [retrieval_tool])
+    agent = create_react_agent(
+        llm,
+        [retrieval_tool],
+        state_modifier=SystemMessage(content=system_prompt),
+    )
 
-    # Each ReAct iteration = 1 LLM step + 1 tool step → multiply by 2, +1 for final answer
+    lc_messages = _to_lc_messages(messages)
     recursion_limit = cfg.agent.max_iterations * 2 + 1
 
     try:
@@ -105,14 +107,12 @@ async def agent_stream(
                 chunk = event["data"].get("chunk")
                 if not chunk:
                     continue
-                # skip chunks that are generating tool calls, not final answer text
                 if getattr(chunk, "tool_call_chunks", None):
                     continue
                 delta = chunk.content
                 if isinstance(delta, str) and delta:
                     yield _sse("token", TokenEvent(delta=delta).model_dump())
                 elif isinstance(delta, list):
-                    # Anthropic returns a list of typed content blocks
                     for block in delta:
                         if isinstance(block, dict) and block.get("type") == "text":
                             text = block.get("text", "")
