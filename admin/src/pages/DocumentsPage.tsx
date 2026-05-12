@@ -71,6 +71,11 @@ export default function DocumentsPage() {
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files?.[0] ?? null;
+    if (selected?.type === "application/pdf" || selected?.name.toLowerCase().endsWith(".pdf")) {
+      toast.error("PDF files are not supported. Please upload a different format.");
+      e.target.value = "";
+      return;
+    }
     setFile(selected);
     if (selected) {
       previewMutation.mutate(selected);
@@ -154,7 +159,7 @@ export default function DocumentsPage() {
               />
             </FormField>
             <FormField label="File" htmlFor="file">
-              <Input id="file" type="file" onChange={handleFileChange} required />
+              <Input id="file" type="file" accept=".txt,.md,.markdown,.rst,.docx,.pptx,.xlsx,.xls" onChange={handleFileChange} required />
             </FormField>
             <FormField label="Description (optional)" htmlFor="description" className="md:col-span-2">
               <Textarea
