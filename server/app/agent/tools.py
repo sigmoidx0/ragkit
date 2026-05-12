@@ -1,4 +1,4 @@
-"""LangChain tools available to the RAG agent."""
+"""Shared LangChain tools used by sub-agents."""
 
 from __future__ import annotations
 
@@ -15,8 +15,8 @@ from app.schemas.chat import SourceItem
 def make_retrieval_tool(db: Session, service_id: int, top_k: int):
     """Return (tool, sources_store).
 
-    sources_store is a dict populated on each tool invocation, keyed by the
-    query string. The executor reads it on `on_tool_end` to build SSE events.
+    sources_store is populated on each invocation keyed by query string.
+    The executor reads it on on_tool_end to build observation SSE events.
     """
     sources_store: dict[str, list[SourceItem]] = {}
 

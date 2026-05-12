@@ -1,4 +1,4 @@
-"""LangGraph ReAct agent: streams SSE events from astream_events."""
+"""Stream SSE events from the multi-agent RAG graph."""
 
 from __future__ import annotations
 
@@ -6,15 +6,13 @@ import asyncio
 import json
 from typing import AsyncIterator
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from langgraph.prebuilt import create_react_agent
+from langchain_core.messages import AIMessage, HumanMessage
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.agent.tools import make_retrieval_tool
+from app.agent.graph import build_multi_agent_graph
 from app.core.config import get_settings
 from app.db.models import SystemPrompt
-from app.llm import get_chat_model
 from app.schemas.chat import (
     AgentStepEvent,
     ChatMessage,
@@ -22,6 +20,8 @@ from app.schemas.chat import (
     ErrorEvent,
     TokenEvent,
 )
+
+_SUB_AGENT_NODES = {"retrieval_agent", "summary_agent", "comparison_agent"}
 
 
 def _sse(event: str, payload: dict) -> str:
@@ -48,6 +48,62 @@ def _to_lc_messages(messages: list[ChatMessage]) -> list:
     return result
 
 
+def _token_sse_from_chunk(event: dict) -> list[str]:
+    chunk = event["data"].get("chunk")
+    if not chunk or getattr(chunk, "tool_call_chunks", None):
+        return []
+    delta = chunk.content
+    if isinstance(delta, str) and delta:
+        return [_sse("token", TokenEvent(delta=delta).model_dump())]
+    if isinstance(delta, list):
+        out = []
+        for block in delta:
+            if isinstance(block, dict) and block.get("type") == "text":
+                text = block.get("text", "")
+                if text:
+                    out.append(_sse("token", TokenEvent(delta=text).model_dump()))
+        return out
+    return []
+
+
+async def _stream_graph(graph, sources_store: dict, input_state: dict, run_config: dict):
+    _current_query = ""
+    try:
+        async for event in graph.astream_events(input_state, config=run_config, version="v2"):
+            kind = event["event"]
+            name = event.get("name", "")
+            node = event.get("metadata", {}).get("langgraph_node", "")
+
+            if kind == "on_tool_start" and name == "retrieval":
+                _current_query = (event["data"].get("input") or {}).get("query", "")
+                if _current_query:
+                    yield _sse(
+                        "agent_step",
+                        AgentStepEvent(
+                            type="tool_call", tool="retrieval", input=_current_query
+                        ).model_dump(),
+                    )
+
+            elif kind == "on_tool_end" and name == "retrieval":
+                sources = sources_store.get(_current_query, [])
+                yield _sse(
+                    "agent_step",
+                    AgentStepEvent(
+                        type="observation", tool="retrieval", output=sources
+                    ).model_dump(),
+                )
+
+            elif kind == "on_chat_model_stream" and node in _SUB_AGENT_NODES:
+                for token_sse in _token_sse_from_chunk(event):
+                    yield token_sse
+
+    except Exception as exc:
+        yield _sse("error", ErrorEvent(error=str(exc)).model_dump())
+        return
+
+    yield _sse("done", DoneEvent(finish_reason="stop").model_dump())
+
+
 async def agent_stream(
     db: Session,
     service_id: int,
@@ -58,72 +114,18 @@ async def agent_stream(
     cfg = get_settings()
     _top_k = top_k or cfg.chat.default_top_k
 
-    user_messages = [m for m in messages if m.role == "user"]
-    if not user_messages:
+    if not any(m.role == "user" for m in messages):
         yield _sse("error", ErrorEvent(error="no user message provided").model_dump())
         return
 
-    retrieval_tool, sources_store = make_retrieval_tool(db, service_id, _top_k)
-
     system_prompt = await asyncio.to_thread(_load_system_prompt, db, service_id)
-
-    llm = get_chat_model()
-    agent = create_react_agent(
-        llm,
-        [retrieval_tool],
-        state_modifier=SystemMessage(content=system_prompt),
+    graph, sources_store = build_multi_agent_graph(
+        db, service_id, _top_k, system_prompt, checkpointer=None
     )
 
-    lc_messages = _to_lc_messages(messages)
-    recursion_limit = cfg.agent.max_iterations * 2 + 1
-
-    try:
-        async for event in agent.astream_events(
-            {"messages": lc_messages},
-            config={"recursion_limit": recursion_limit},
-            version="v2",
-        ):
-            kind = event["event"]
-            name = event.get("name", "")
-
-            if kind == "on_tool_start" and name == "retrieval":
-                query = event["data"].get("input", {}).get("query", "")
-                yield _sse(
-                    "agent_step",
-                    AgentStepEvent(type="tool_call", tool="retrieval", input=query).model_dump(),
-                )
-
-            elif kind == "on_tool_end" and name == "retrieval":
-                query = event["data"].get("input", {}).get("query", "")
-                sources = sources_store.get(query, [])
-                yield _sse(
-                    "agent_step",
-                    AgentStepEvent(
-                        type="observation", tool="retrieval", output=sources
-                    ).model_dump(),
-                )
-
-            elif kind == "on_chat_model_stream":
-                chunk = event["data"].get("chunk")
-                if not chunk:
-                    continue
-                if getattr(chunk, "tool_call_chunks", None):
-                    continue
-                delta = chunk.content
-                if isinstance(delta, str) and delta:
-                    yield _sse("token", TokenEvent(delta=delta).model_dump())
-                elif isinstance(delta, list):
-                    for block in delta:
-                        if isinstance(block, dict) and block.get("type") == "text":
-                            text = block.get("text", "")
-                            if text:
-                                yield _sse("token", TokenEvent(delta=text).model_dump())
-
-    except Exception as exc:
-        yield _sse("error", ErrorEvent(error=str(exc)).model_dump())
-        return
-
-    yield _sse("done", DoneEvent(finish_reason="stop").model_dump())
+    input_state = {"messages": _to_lc_messages(messages), "agent_type": ""}
+    async for chunk in _stream_graph(graph, sources_store, input_state, run_config={}):
+        yield chunk
 
 
 async def session_agent_stream(
@@ -138,66 +140,14 @@ async def session_agent_stream(
 
     cfg = get_settings()
     _top_k = top_k or cfg.chat.default_top_k
-
-    retrieval_tool, sources_store = make_retrieval_tool(db, service_id, _top_k)
     system_prompt = await asyncio.to_thread(_load_system_prompt, db, service_id)
 
-    llm = get_chat_model()
-    agent = create_react_agent(
-        llm,
-        [retrieval_tool],
-        checkpointer=get_checkpointer(),
-        state_modifier=SystemMessage(content=system_prompt),
+    graph, sources_store = build_multi_agent_graph(
+        db, service_id, _top_k, system_prompt, checkpointer=get_checkpointer()
     )
 
-    recursion_limit = cfg.agent.max_iterations * 2 + 1
-    run_config = {
-        "configurable": {"thread_id": thread_id},
-        "recursion_limit": recursion_limit,
-    }
+    input_state = {"messages": [HumanMessage(content=new_message)], "agent_type": ""}
+    run_config = {"configurable": {"thread_id": thread_id}}
 
-    try:
-        async for event in agent.astream_events(
-            {"messages": [HumanMessage(content=new_message)]},
-            config=run_config,
-            version="v2",
-        ):
-            kind = event["event"]
-            name = event.get("name", "")
-
-            if kind == "on_tool_start" and name == "retrieval":
-                query = event["data"].get("input", {}).get("query", "")
-                yield _sse(
-                    "agent_step",
-                    AgentStepEvent(type="tool_call", tool="retrieval", input=query).model_dump(),
-                )
-
-            elif kind == "on_tool_end" and name == "retrieval":
-                query = event["data"].get("input", {}).get("query", "")
-                sources = sources_store.get(query, [])
-                yield _sse(
-                    "agent_step",
-                    AgentStepEvent(type="observation", tool="retrieval", output=sources).model_dump(),
-                )
-
-            elif kind == "on_chat_model_stream":
-                chunk = event["data"].get("chunk")
-                if not chunk:
-                    continue
-                if getattr(chunk, "tool_call_chunks", None):
-                    continue
-                delta = chunk.content
-                if isinstance(delta, str) and delta:
-                    yield _sse("token", TokenEvent(delta=delta).model_dump())
-                elif isinstance(delta, list):
-                    for block in delta:
-                        if isinstance(block, dict) and block.get("type") == "text":
-                            text = block.get("text", "")
-                            if text:
-                                yield _sse("token", TokenEvent(delta=text).model_dump())
-
-    except Exception as exc:
-        yield _sse("error", ErrorEvent(error=str(exc)).model_dump())
-        return
-
-    yield _sse("done", DoneEvent(finish_reason="stop").model_dump())
+    async for chunk in _stream_graph(graph, sources_store, input_state, run_config):
+        yield chunk

@@ -1,0 +1,88 @@
+"""Multi-agent RAG graph: Supervisor routes to Retrieval / Summary / Comparison agent."""
+
+from __future__ import annotations
+
+from typing import Literal
+
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langgraph.graph import END, START, StateGraph
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
+from app.agent.agents import make_comparison_agent, make_retrieval_agent, make_summary_agent
+from app.agent.state import MultiAgentState
+from app.agent.tools import make_retrieval_tool
+from app.llm import get_chat_model
+from app.schemas.chat import SourceItem
+
+
+# ── Supervisor ────────────────────────────────────────────────────────────────
+
+class _SupervisorDecision(BaseModel):
+    agent_type: Literal["retrieval", "summary", "comparison"]
+
+
+def _make_supervisor_node():
+    async def supervisor_node(state: MultiAgentState) -> dict:
+        llm = get_chat_model().with_structured_output(_SupervisorDecision)
+        user_msgs = [m for m in state["messages"] if isinstance(m, HumanMessage)]
+        last = str(user_msgs[-1].content) if user_msgs else ""
+
+        result: _SupervisorDecision = await llm.ainvoke([
+            SystemMessage(
+                "Classify the user's intent into one of three categories:\n"
+                "- retrieval: factual questions, definitions, explanations\n"
+                "- summary: requests to summarize a topic or document\n"
+                "- comparison: requests to compare, contrast, or differentiate items"
+            ),
+            HumanMessage(content=last),
+        ])
+        return {"agent_type": result.agent_type}
+
+    return supervisor_node
+
+
+# ── Sub-agent node wrapper ─────────────────────────────────────────────────────
+
+def _wrap_agent(agent):
+    """Invoke a compiled ReAct agent and return only the final AI message."""
+    async def node(state: MultiAgentState) -> dict:
+        result = await agent.ainvoke({"messages": state["messages"]})
+        ai_messages = [m for m in result["messages"] if isinstance(m, AIMessage)]
+        return {"messages": ai_messages[-1:] if ai_messages else []}
+    return node
+
+
+# ── Graph builder ─────────────────────────────────────────────────────────────
+
+def build_multi_agent_graph(
+    db: Session,
+    service_id: int,
+    top_k: int,
+    system_prompt: str,
+    checkpointer=None,
+) -> tuple:
+    """Return (compiled_graph, sources_store)."""
+    retrieval_tool, sources_store = make_retrieval_tool(db, service_id, top_k)
+
+    graph = StateGraph(MultiAgentState)
+
+    graph.add_node("supervisor", _make_supervisor_node())
+    graph.add_node("retrieval_agent", _wrap_agent(make_retrieval_agent(retrieval_tool, system_prompt)))
+    graph.add_node("summary_agent",   _wrap_agent(make_summary_agent(retrieval_tool, system_prompt)))
+    graph.add_node("comparison_agent",_wrap_agent(make_comparison_agent(retrieval_tool, system_prompt)))
+
+    graph.add_edge(START, "supervisor")
+    graph.add_conditional_edges(
+        "supervisor",
+        lambda s: s["agent_type"],
+        {
+            "retrieval":  "retrieval_agent",
+            "summary":    "summary_agent",
+            "comparison": "comparison_agent",
+        },
+    )
+    for node in ("retrieval_agent", "summary_agent", "comparison_agent"):
+        graph.add_edge(node, END)
+
+    return graph.compile(checkpointer=checkpointer), sources_store

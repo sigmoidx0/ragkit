@@ -126,7 +126,8 @@ class LlmSection(BaseModel):
 
 
 class AgentSection(BaseModel):
-    max_iterations: int = 5
+    max_iterations: int = 5  # legacy ReAct recursion limit, kept for config compat
+    max_retries: int = 2     # grader re-retrieval attempts before falling through
 
 
 class ChatSection(BaseModel):
