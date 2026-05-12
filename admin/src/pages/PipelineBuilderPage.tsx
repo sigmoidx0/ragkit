@@ -15,7 +15,7 @@ import {
   type OnConnect,
 } from "@xyflow/react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 type RunPhase = "idle" | "checking" | "preparing" | "running";
 
@@ -139,6 +139,7 @@ export default function PipelineBuilderPage() {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [pipelineName, setPipelineName] = useState("Untitled Pipeline");
   const [activePipelineId, setActivePipelineId] = useState<number | null>(null);
+  const [isSystemDefault, setIsSystemDefault] = useState(false);
   const [query, setQuery] = useState("");
   const [topK, setTopK] = useState(5);
   const [runResult, setRunResult] = useState<PipelineRunResponse | null>(null);
@@ -166,6 +167,14 @@ export default function PipelineBuilderPage() {
   const { data: pipelines = [], refetch: refetchPipelines } = useQuery({
     queryKey: ["pipelines", service?.id],
     queryFn: () => PipelineApi.list(service!.id),
+    enabled: !!service,
+  });
+
+  // System default graph (shown when no active pipeline exists)
+  const { data: defaultGraph } = useQuery({
+    queryKey: ["pipeline-default"],
+    queryFn: PipelineApi.defaultGraph,
+    staleTime: Infinity,
     enabled: !!service,
   });
 
@@ -312,7 +321,7 @@ export default function PipelineBuilderPage() {
   );
 
   // Load a saved pipeline
-  const loadPipeline = (p: Pipeline) => {
+  const loadPipeline = useCallback((p: Pipeline) => {
     const { nodes: flowNodes, edges: flowEdges } = graphToFlow(p.graph_json);
     setNodes(flowNodes);
     setEdges(flowEdges);
@@ -321,7 +330,31 @@ export default function PipelineBuilderPage() {
     setActivePipelineStatus(p.status);
     setSelectedNodeId(null);
     setRunResult(null);
-  };
+    setIsSystemDefault(false);
+  }, [setNodes, setEdges]);
+
+  // Auto-load the active pipeline on first mount; fall back to system default graph
+  const autoLoaded = useRef(false);
+  useEffect(() => {
+    if (autoLoaded.current) return;
+    const pipelinesReady = pipelines.length > 0 || defaultGraph !== undefined;
+    if (!pipelinesReady) return;
+    autoLoaded.current = true;
+
+    const active = pipelines.find((p) => p.status === "active");
+    if (active) {
+      loadPipeline(active);
+    } else if (defaultGraph) {
+      const { nodes: flowNodes, edges: flowEdges } = graphToFlow(defaultGraph);
+      setNodes(flowNodes);
+      setEdges(flowEdges);
+      setPipelineName("기본 파이프라인");
+      setActivePipelineId(null);
+      setActivePipelineStatus("draft");
+      setSelectedNodeId(null);
+      setIsSystemDefault(true);
+    }
+  }, [pipelines, defaultGraph, loadPipeline, setNodes, setEdges]);
 
   const newPipeline = () => {
     setNodes([]);
@@ -331,6 +364,7 @@ export default function PipelineBuilderPage() {
     setActivePipelineStatus("draft");
     setSelectedNodeId(null);
     setRunResult(null);
+    setIsSystemDefault(false);
   };
 
   const loadExample = () => {
@@ -340,9 +374,10 @@ export default function PipelineBuilderPage() {
     setActivePipelineId(null);
     setSelectedNodeId(null);
     setRunResult(null);
+    setIsSystemDefault(false);
   };
 
-  const isEmpty = nodes.length === 0;
+  const isEmpty = nodes.length === 0 && !isSystemDefault;
 
   return (
     <div className="-mx-4 -mb-10 md:-mx-8 flex flex-col" style={{ height: "calc(100vh - 81px)" }}>
@@ -373,7 +408,14 @@ export default function PipelineBuilderPage() {
           onChange={(e) => setPipelineName(e.target.value)}
           className="w-40 text-sm py-1.5"
           placeholder="Pipeline name"
+          readOnly={isSystemDefault}
         />
+
+        {isSystemDefault && (
+          <span className="text-xs font-semibold px-2.5 py-1 rounded-xl bg-blue-50 text-blue-500 dark:bg-blue-900/40 dark:text-blue-300">
+            시스템 기본값
+          </span>
+        )}
 
         {isAdmin ? (
           <>

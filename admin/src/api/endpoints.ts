@@ -93,6 +93,7 @@ export const SearchApi = {
 export const PipelineApi = {
   schema: () => apiFetch<PipelineSchema>("/pipeline-schema"),
   nodeModels: () => apiFetch<NodeModels>("/pipeline-node-models"),
+  defaultGraph: () => apiFetch<PipelineGraph>("/pipeline-default"),
   list: (serviceId: number) =>
     apiFetch<Pipeline[]>(`/services/${serviceId}/pipelines`),
   get: (serviceId: number, pipelineId: number) =>

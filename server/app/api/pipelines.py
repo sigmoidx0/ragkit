@@ -60,6 +60,57 @@ _NODE_MODELS: dict[str, dict[str, list[str]]] = {
 }
 
 
+@router.get("/pipeline-default")
+def default_pipeline_graph(_user: CurrentUser) -> dict:
+    """Return the system default pipeline graph derived from server config."""
+    from app.core.config import get_settings
+    settings = get_settings()
+    emb = settings.embeddings
+    emb_model_map: dict[str, str | None] = {
+        "ollama": emb.ollama.model,
+        "tei": None,
+        "vllm": emb.vllm.model,
+        "azure_openai": emb.azure_openai.deployment or None,
+    }
+    emb_model = emb_model_map.get(emb.provider)
+
+    reranker = settings.search.reranker
+    nodes: list[dict] = [
+        {"id": "d-1", "type": "QueryInput",   "position": {"x": 80,   "y": 160}, "data": {"config": {}}},
+        {"id": "d-2", "type": "EmbedNode",    "position": {"x": 280,  "y": 60},  "data": {"config": {"provider": emb.provider, "model": emb_model}}},
+        {"id": "d-3", "type": "RetrieveNode", "position": {"x": 520,  "y": 120}, "data": {"config": {}}},
+    ]
+    edges: list[dict] = [
+        {"id": "d-e1", "source": "d-1", "target": "d-2", "sourceHandle": "query",  "targetHandle": "query"},
+        {"id": "d-e2", "source": "d-1", "target": "d-3", "sourceHandle": "query",  "targetHandle": "query"},
+        {"id": "d-e3", "source": "d-2", "target": "d-3", "sourceHandle": "vector", "targetHandle": "vector"},
+    ]
+
+    if reranker is not None:
+        nodes += [
+            {"id": "d-4", "type": "RerankNode",  "position": {"x": 760,  "y": 60},  "data": {"config": {"provider": reranker.provider, "model": reranker.model}}},
+            {"id": "d-5", "type": "EnrichNode",  "position": {"x": 1000, "y": 120}, "data": {"config": {}}},
+            {"id": "d-6", "type": "OutputNode",  "position": {"x": 1200, "y": 200}, "data": {"config": {}}},
+        ]
+        edges += [
+            {"id": "d-e4", "source": "d-3", "target": "d-4", "sourceHandle": "hits",    "targetHandle": "hits"},
+            {"id": "d-e5", "source": "d-1", "target": "d-4", "sourceHandle": "query",   "targetHandle": "query"},
+            {"id": "d-e6", "source": "d-4", "target": "d-5", "sourceHandle": "hits",    "targetHandle": "hits"},
+            {"id": "d-e7", "source": "d-5", "target": "d-6", "sourceHandle": "results", "targetHandle": "results"},
+        ]
+    else:
+        nodes += [
+            {"id": "d-4", "type": "EnrichNode", "position": {"x": 760, "y": 120}, "data": {"config": {}}},
+            {"id": "d-5", "type": "OutputNode", "position": {"x": 960, "y": 200}, "data": {"config": {}}},
+        ]
+        edges += [
+            {"id": "d-e4", "source": "d-3", "target": "d-4", "sourceHandle": "hits",    "targetHandle": "hits"},
+            {"id": "d-e5", "source": "d-4", "target": "d-5", "sourceHandle": "results", "targetHandle": "results"},
+        ]
+
+    return {"nodes": nodes, "edges": edges}
+
+
 @router.get("/pipeline-schema")
 def pipeline_schema(_user: CurrentUser) -> dict:
     import app.pipeline.nodes  # noqa: F401
