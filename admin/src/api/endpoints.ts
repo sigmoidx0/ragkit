@@ -5,6 +5,7 @@ import type {
   ChunkPreviewResponse,
   DocumentListResponse,
   DocumentSummary,
+  NodeModels,
   Pipeline,
   PipelineGraph,
   PipelineReadiness,
@@ -91,6 +92,7 @@ export const SearchApi = {
 
 export const PipelineApi = {
   schema: () => apiFetch<PipelineSchema>("/pipeline-schema"),
+  nodeModels: () => apiFetch<NodeModels>("/pipeline-node-models"),
   list: (serviceId: number) =>
     apiFetch<Pipeline[]>(`/services/${serviceId}/pipelines`),
   get: (serviceId: number, pipelineId: number) =>

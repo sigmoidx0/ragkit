@@ -26,7 +26,7 @@ const COMPONENT_LABELS: Record<string, string> = {
 import { toast } from "sonner";
 
 import { PipelineApi } from "@/api/endpoints";
-import type { Pipeline, PipelineGraph, PipelineRunResponse, PipelineSchema, PipelineStatus } from "@/api/types";
+import type { NodeModels, Pipeline, PipelineGraph, PipelineRunResponse, PipelineSchema, PipelineStatus } from "@/api/types";
 import { NodeConfigPanel } from "@/components/pipeline/NodeConfigPanel";
 import { NodePalette } from "@/components/pipeline/NodePalette";
 import { RunResultsDrawer } from "@/components/pipeline/RunResultsDrawer";
@@ -151,6 +151,13 @@ export default function PipelineBuilderPage() {
   const { data: schema = {} as PipelineSchema } = useQuery({
     queryKey: ["pipeline-schema"],
     queryFn: PipelineApi.schema,
+    staleTime: Infinity,
+    enabled: !!service,
+  });
+
+  const { data: nodeModels = {} as NodeModels } = useQuery({
+    queryKey: ["pipeline-node-models"],
+    queryFn: PipelineApi.nodeModels,
     staleTime: Infinity,
     enabled: !!service,
   });
@@ -526,6 +533,7 @@ export default function PipelineBuilderPage() {
           <NodeConfigPanel
             node={selectedNode}
             schema={schema[selectedNode.type ?? ""]}
+            nodeModels={nodeModels[selectedNode.type ?? ""] ?? {}}
             onChange={handleConfigChange}
             readOnly={!isAdmin}
           />

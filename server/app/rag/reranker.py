@@ -66,15 +66,29 @@ class _CrossEncoderReranker:
         ]
 
 
-@lru_cache(maxsize=1)
-def get_reranker() -> Reranker:
+@lru_cache(maxsize=4)
+def _build_reranker(provider: str, model: str | None) -> Reranker:
     cfg = get_settings().search.reranker
-    if cfg is None:
+    if provider == "passthrough":
         return _PassthroughReranker()
-    if cfg.provider == "cohere":
-        if not cfg.api_key:
+    if provider == "cohere":
+        api_key = cfg.api_key if cfg else None
+        if not api_key:
             raise ValueError("search.reranker.api_key (or RERANKER_API_KEY) is required for Cohere")
-        return _CohereReranker(model=cfg.model, api_key=cfg.api_key)
-    if cfg.provider == "cross_encoder":
-        return _CrossEncoderReranker(model=cfg.model)
-    raise ValueError(f"Unknown reranker provider: {cfg.provider!r}")
+        return _CohereReranker(
+            model=model or (cfg.model if cfg else "rerank-v3.5"),
+            api_key=api_key,
+        )
+    if provider == "cross_encoder":
+        return _CrossEncoderReranker(model=model or (cfg.model if cfg else "BAAI/bge-reranker-base"))
+    raise ValueError(f"Unknown reranker provider: {provider!r}")
+
+
+def get_reranker(provider: str | None = None, model: str | None = None) -> Reranker:
+    """Return a reranker, using global config as defaults for unspecified params."""
+    cfg = get_settings().search.reranker
+    if provider is None:
+        if cfg is None:
+            return _build_reranker("passthrough", None)
+        return _build_reranker(cfg.provider, model or cfg.model)
+    return _build_reranker(provider, model or None)

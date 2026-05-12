@@ -30,12 +30,30 @@ class _EmbedNodeExecutor:
         description="Converts the query text into a vector using the configured embedding model.",
         inputs=[HandleDef("query", "query")],
         outputs=[HandleDef("vector", "vector")],
-        config_schema={"type": "object", "properties": {}, "additionalProperties": False},
+        config_schema={
+            "type": "object",
+            "properties": {
+                "provider": {
+                    "type": ["string", "null"],
+                    "enum": ["ollama", "tei", "vllm", "azure_openai", None],
+                    "default": None,
+                    "description": "Embedding provider (null = use global config)",
+                },
+                "model": {
+                    "type": ["string", "null"],
+                    "default": None,
+                    "description": "Model name override (null = use global config)",
+                },
+            },
+            "additionalProperties": False,
+        },
     )
 
     def execute(self, config: dict[str, Any], inputs: dict[str, Any], ctx: ExecutionContext) -> dict[str, Any]:
         from app.embeddings import get_embedder
-        vector = get_embedder().embed_query(inputs["query"])
+        provider = config.get("provider") or None
+        model = config.get("model") or None
+        vector = get_embedder(provider=provider, model=model).embed_query(inputs["query"])
         return {"vector": vector}
 
 
@@ -86,6 +104,17 @@ class _RerankNodeExecutor:
             "type": "object",
             "properties": {
                 "top_k": {"type": "integer", "default": 5, "minimum": 1, "maximum": 200},
+                "provider": {
+                    "type": ["string", "null"],
+                    "enum": ["passthrough", "cross_encoder", "cohere", None],
+                    "default": None,
+                    "description": "Reranker provider (null = use global config)",
+                },
+                "model": {
+                    "type": ["string", "null"],
+                    "default": None,
+                    "description": "Model name override (null = use global config)",
+                },
             },
             "additionalProperties": False,
         },
@@ -97,7 +126,9 @@ class _RerankNodeExecutor:
 
         settings = get_settings()
         top_k = int(config.get("top_k") or ctx.run_inputs.get("top_k") or settings.search.default_top_k)
-        reranked = get_reranker().rerank(inputs["query"], inputs["hits"], top_k)
+        provider = config.get("provider") or None
+        model = config.get("model") or None
+        reranked = get_reranker(provider=provider, model=model).rerank(inputs["query"], inputs["hits"], top_k)
         return {"hits": reranked}
 
 

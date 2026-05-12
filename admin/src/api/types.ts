@@ -202,6 +202,9 @@ export interface NodeSchemaEntry {
 
 export type PipelineSchema = Record<string, NodeSchemaEntry>;
 
+// node_type → provider → model list
+export type NodeModels = Record<string, Record<string, string[]>>;
+
 // ---------------------------------------------------------------------------
 // System prompts
 // ---------------------------------------------------------------------------

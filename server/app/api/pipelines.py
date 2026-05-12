@@ -23,11 +23,52 @@ from app.schemas.pipelines import (
 
 router = APIRouter(tags=["pipelines"])
 
+_NODE_MODELS: dict[str, dict[str, list[str]]] = {
+    "EmbedNode": {
+        "ollama": [
+            "nomic-embed-text",
+            "mxbai-embed-large",
+            "all-minilm",
+            "bge-m3",
+        ],
+        "tei": [],
+        "vllm": [
+            "intfloat/e5-large-v2",
+            "BAAI/bge-large-en-v1.5",
+            "intfloat/multilingual-e5-large",
+        ],
+        "azure_openai": [
+            "text-embedding-3-small",
+            "text-embedding-3-large",
+            "text-embedding-ada-002",
+        ],
+    },
+    "RerankNode": {
+        "passthrough": [],
+        "cross_encoder": [
+            "BAAI/bge-reranker-base",
+            "BAAI/bge-reranker-large",
+            "cross-encoder/ms-marco-MiniLM-L-6-v2",
+            "cross-encoder/ms-marco-MiniLM-L-12-v2",
+        ],
+        "cohere": [
+            "rerank-v3.5",
+            "rerank-multilingual-v3.0",
+            "rerank-english-v3.0",
+        ],
+    },
+}
+
 
 @router.get("/pipeline-schema")
 def pipeline_schema(_user: CurrentUser) -> dict:
     import app.pipeline.nodes  # noqa: F401
     return get_node_schema()
+
+
+@router.get("/pipeline-node-models")
+def pipeline_node_models(_user: CurrentUser) -> dict:
+    return _NODE_MODELS
 
 
 @router.get("/services/{service_id}/pipelines", response_model=list[PipelineOut])
