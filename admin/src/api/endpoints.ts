@@ -1,6 +1,7 @@
 import { apiFetch, apiFetchBlob, apiSSE } from "./client";
 import type {
   ChatMessage,
+  ChatSession,
   ChunkPreviewResponse,
   DocumentListResponse,
   DocumentSummary,
@@ -15,6 +16,7 @@ import type {
   Service,
   ServiceMember,
   ServiceWithRole,
+  SessionMessage,
   SystemPrompt,
   TokenResponse,
   User,
@@ -125,4 +127,17 @@ export const SystemPromptsApi = {
 export const ChatApi = {
   stream: (serviceId: number, messages: ChatMessage[], topK?: number, signal?: AbortSignal) =>
     apiSSE(`/services/${serviceId}/chat`, { messages, top_k: topK }, signal),
+};
+
+export const SessionsApi = {
+  list: (serviceId: number) =>
+    apiFetch<ChatSession[]>(`/services/${serviceId}/sessions`),
+  create: (serviceId: number, title?: string | null) =>
+    apiFetch<ChatSession>(`/services/${serviceId}/sessions`, { body: { title: title ?? null } }),
+  messages: (serviceId: number, sessionId: number) =>
+    apiFetch<SessionMessage[]>(`/services/${serviceId}/sessions/${sessionId}/messages`),
+  remove: (serviceId: number, sessionId: number) =>
+    apiFetch<void>(`/services/${serviceId}/sessions/${sessionId}`, { method: "DELETE" }),
+  chat: (serviceId: number, sessionId: number, message: string, topK?: number, signal?: AbortSignal) =>
+    apiSSE(`/services/${serviceId}/sessions/${sessionId}/chat`, { message, top_k: topK }, signal),
 };

@@ -29,7 +29,7 @@ export default function App() {
           </RequireAuth>
         }
       >
-        <Route index element={<Navigate to="/documents" replace />} />
+        <Route index element={<Navigate to="/chat" replace />} />
         <Route path="/documents" element={<DocumentsPage />} />
         <Route path="/documents/:id" element={<DocumentDetailPage />} />
         <Route path="/search" element={<SearchPage />} />

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import StreamingResponse
 from langchain_core.messages import AIMessage, HumanMessage
@@ -121,7 +123,9 @@ async def session_chat(
     if not get_settings().chat.enabled:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "chat is disabled")
 
-    _get_session_or_404(db, session_id, user.id, service_id)
+    session = _get_session_or_404(db, session_id, user.id, service_id)
+    session.updated_at = datetime.now(timezone.utc)
+    db.commit()
 
     return StreamingResponse(
         session_agent_stream(db, service_id, str(session_id), body.message, body.top_k, body.filters),

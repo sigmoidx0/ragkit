@@ -218,6 +218,23 @@ export interface SystemPrompt {
 }
 
 // ---------------------------------------------------------------------------
+// Chat sessions
+// ---------------------------------------------------------------------------
+
+export interface ChatSession {
+  id: number;
+  service_id: number;
+  title: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SessionMessage {
+  role: string;
+  content: string;
+}
+
+// ---------------------------------------------------------------------------
 // Chat / agent SSE
 // ---------------------------------------------------------------------------
 

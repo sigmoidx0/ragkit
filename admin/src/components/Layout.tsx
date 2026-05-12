@@ -200,9 +200,9 @@ function SidebarContent({
 
       {/* Nav */}
       <nav className="flex-1 space-y-1 px-4 py-6">
+        <SidebarNavItem to="/chat" icon={<ChatIcon />} label="Chat" onClick={onNavClick} />
         <SidebarNavItem to="/documents" icon={<FileIcon />} label="Documents" onClick={onNavClick} />
         <SidebarNavItem to="/search" icon={<SearchIcon />} label="Search" onClick={onNavClick} />
-        <SidebarNavItem to="/chat" icon={<ChatIcon />} label="Chat" onClick={onNavClick} />
         <SidebarNavItem to="/pipeline" icon={<FlowIcon />} label="Pipeline" onClick={onNavClick} />
         {isServiceAdmin && (
           <SidebarNavItem to="/playground" icon={<BeakerIcon />} label="Playground" onClick={onNavClick} />

@@ -3,12 +3,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { ChatApi, SystemPromptsApi } from "@/api/endpoints";
+import { SessionsApi, SystemPromptsApi } from "@/api/endpoints";
 import { useService } from "@/services/ServiceProvider";
 import { useAuth } from "@/auth/AuthProvider";
-import { Button, Card, CardHeader, Textarea, Badge } from "@/components/ui";
+import { Button, Card, Textarea, Badge } from "@/components/ui";
 import { cn } from "@/lib/cn";
-import type { AgentStep, ChatMessage, ChatTurn, SourceItem, SystemPrompt } from "@/api/types";
+import type { AgentStep, ChatRole, ChatSession, ChatTurn, SourceItem, SystemPrompt } from "@/api/types";
 
 // ── Icons ────────────────────────────────────────────────────────────────────
 
@@ -46,6 +46,37 @@ function CloseIcon() {
       <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
     </svg>
   );
+}
+
+function PlusIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4">
+      <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
+    </svg>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className="h-3.5 w-3.5">
+      <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" />
+    </svg>
+  );
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function formatSessionDate(dateStr: string): string {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  if (diffDays === 0) {
+    return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }
+  if (diffDays === 1) return "Yesterday";
+  if (diffDays < 7) return date.toLocaleDateString([], { weekday: "long" });
+  return date.toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
 // ── Agent steps ───────────────────────────────────────────────────────────────
@@ -162,6 +193,74 @@ function MessageBubble({ turn }: { turn: ChatTurn }) {
   );
 }
 
+// ── Sessions sidebar ─────────────────────────────────────────────────────────
+
+function SessionSidebar({
+  sessions,
+  activeId,
+  onSelect,
+  onDelete,
+  onNew,
+  creating,
+  disabled,
+}: {
+  sessions: ChatSession[];
+  activeId: number | null;
+  onSelect: (id: number) => void;
+  onDelete: (id: number) => void;
+  onNew: () => void;
+  creating: boolean;
+  disabled: boolean;
+}) {
+  return (
+    <div className="flex h-full flex-col">
+      <div className="p-3 border-b border-gray-100 dark:border-gray-700">
+        <Button
+          size="sm"
+          variant="secondary"
+          className="w-full flex items-center justify-center gap-1.5"
+          onClick={onNew}
+          disabled={creating || disabled}
+        >
+          <PlusIcon />
+          New Chat
+        </Button>
+      </div>
+      <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
+        {sessions.length === 0 ? (
+          <p className="py-6 text-center text-xs text-gray-400">No sessions yet</p>
+        ) : (
+          sessions.map((session) => (
+            <div
+              key={session.id}
+              onClick={() => onSelect(session.id)}
+              className={cn(
+                "group flex cursor-pointer items-center gap-2 rounded-xl px-3 py-2 text-xs transition-colors",
+                activeId === session.id
+                  ? "bg-teal-50 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300"
+                  : "text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700/50",
+              )}
+            >
+              <span className="flex-1 truncate">
+                {session.title ?? formatSessionDate(session.updated_at)}
+              </span>
+              <button
+                className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100 hover:text-red-500"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete(session.id);
+                }}
+              >
+                <TrashIcon />
+              </button>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── System prompts panel ─────────────────────────────────────────────────────
 
 function SystemPromptsPanel({
@@ -212,8 +311,6 @@ function SystemPromptsPanel({
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
   });
-
-  const active = prompts.find((p) => p.is_active);
 
   return (
     <div className="flex h-full flex-col">
@@ -331,28 +428,120 @@ function PromptCard({
 export default function ChatPage() {
   const { current: service } = useService();
   const { user } = useAuth();
+  const qc = useQueryClient();
+
+  const [activeSessionId, setActiveSessionId] = useState<number | null>(null);
   const [turns, setTurns] = useState<ChatTurn[]>([]);
+  const [loadingMessages, setLoadingMessages] = useState(false);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [showPrompts, setShowPrompts] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const prevServiceIdRef = useRef<number | null>(null);
+
+  const isAdmin = user?.is_superadmin || false;
 
   const { data: prompts = [] } = useQuery({
     queryKey: ["system-prompts", service?.id],
     queryFn: () => SystemPromptsApi.list(service!.id),
     enabled: !!service,
   });
-
   const activePrompt = prompts.find((p) => p.is_active);
-  const isAdmin = user?.is_superadmin || false;
+
+  const { data: sessions = [], isSuccess: sessionsLoaded } = useQuery({
+    queryKey: ["sessions", service?.id],
+    queryFn: () => SessionsApi.list(service!.id),
+    enabled: !!service,
+  });
+
+  const createSession = useMutation({
+    mutationFn: () => SessionsApi.create(service!.id),
+    onSuccess: (session) => {
+      qc.invalidateQueries({ queryKey: ["sessions", service?.id] });
+      setActiveSessionId(session.id);
+      setTurns([]);
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to create session"),
+  });
+
+  const deleteSession = useMutation({
+    mutationFn: (sessionId: number) => SessionsApi.remove(service!.id, sessionId),
+    onSuccess: (_, deletedId) => {
+      qc.invalidateQueries({ queryKey: ["sessions", service?.id] });
+      if (activeSessionId === deletedId) {
+        const remaining = sessions.filter((s) => s.id !== deletedId);
+        if (remaining.length > 0) {
+          setActiveSessionId(remaining[0].id);
+        } else {
+          setActiveSessionId(null);
+          setTurns([]);
+        }
+      }
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to delete session"),
+  });
+
+  // Reset when service changes
+  useEffect(() => {
+    if (!service) return;
+    if (service.id === prevServiceIdRef.current) return;
+    prevServiceIdRef.current = service.id;
+    setActiveSessionId(null);
+    setTurns([]);
+  }, [service?.id]);
+
+  // Auto-select first session once sessions load
+  useEffect(() => {
+    if (!sessionsLoaded || activeSessionId != null) return;
+    if (sessions.length > 0) {
+      setActiveSessionId(sessions[0].id);
+    }
+  }, [sessionsLoaded, sessions, activeSessionId]);
+
+  // Load messages from DB when active session changes
+  useEffect(() => {
+    if (!service || !activeSessionId) {
+      setTurns([]);
+      return;
+    }
+
+    let cancelled = false;
+    setLoadingMessages(true);
+    setTurns([]);
+
+    SessionsApi.messages(service.id, activeSessionId)
+      .then((messages) => {
+        if (cancelled) return;
+        setTurns(
+          messages.map((m) => ({
+            id: crypto.randomUUID(),
+            role: m.role as ChatRole,
+            content: m.content,
+            agentSteps: [],
+            sources: [],
+            isStreaming: false,
+          })),
+        );
+      })
+      .catch(() => {
+        if (!cancelled) toast.error("Failed to load messages");
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingMessages(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSessionId, service?.id]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [turns]);
 
   async function sendMessage() {
-    if (!service || !input.trim() || streaming) return;
+    if (!service || !activeSessionId || !input.trim() || streaming) return;
     const query = input.trim();
     setInput("");
     setStreaming(true);
@@ -377,11 +566,6 @@ export default function ChatPage() {
 
     setTurns((prev) => [...prev, userTurn, assistantTurn]);
 
-    const history: ChatMessage[] = [
-      ...turns.map((t) => ({ role: t.role, content: t.content })),
-      { role: "user", content: query },
-    ];
-
     const ctrl = new AbortController();
     abortRef.current = ctrl;
 
@@ -390,10 +574,21 @@ export default function ChatPage() {
       let sources: SourceItem[] = [];
       let content = "";
 
-      for await (const { event, data } of ChatApi.stream(service.id, history, undefined, ctrl.signal)) {
+      for await (const { event, data } of SessionsApi.chat(
+        service.id,
+        activeSessionId,
+        query,
+        undefined,
+        ctrl.signal,
+      )) {
         if (event === "agent_step") {
           const payload = JSON.parse(data) as { type: string; tool: string; input?: string; output?: SourceItem[] };
-          const step: AgentStep = { type: payload.type as "tool_call" | "observation", tool: payload.tool, input: payload.input, output: payload.output };
+          const step: AgentStep = {
+            type: payload.type as "tool_call" | "observation",
+            tool: payload.tool,
+            input: payload.input,
+            output: payload.output,
+          };
           steps = [...steps, step];
           if (payload.type === "observation" && payload.output) {
             sources = [...sources, ...payload.output];
@@ -433,6 +628,7 @@ export default function ChatPage() {
     } finally {
       setStreaming(false);
       abortRef.current = null;
+      qc.invalidateQueries({ queryKey: ["sessions", service.id] });
     }
   }
 
@@ -447,13 +643,26 @@ export default function ChatPage() {
     abortRef.current?.abort();
   }
 
-  function clearChat() {
-    stopStream();
-    setTurns([]);
-  }
-
   return (
     <div className="flex h-[calc(100vh-8rem)] gap-4">
+      {/* Sessions sidebar */}
+      <Card className="w-52 shrink-0 overflow-hidden flex flex-col p-0">
+        <SessionSidebar
+          sessions={sessions}
+          activeId={activeSessionId}
+          onSelect={(id) => {
+            if (id !== activeSessionId) {
+              stopStream();
+              setActiveSessionId(id);
+            }
+          }}
+          onDelete={(id) => deleteSession.mutate(id)}
+          onNew={() => createSession.mutate()}
+          creating={createSession.isPending}
+          disabled={!service}
+        />
+      </Card>
+
       {/* Chat area */}
       <div className="flex flex-1 flex-col min-w-0">
         {/* Header */}
@@ -466,11 +675,6 @@ export default function ChatPage() {
             )}
           </div>
           <div className="flex items-center gap-2">
-            {turns.length > 0 && (
-              <Button size="sm" variant="ghost" onClick={clearChat}>
-                Clear
-              </Button>
-            )}
             <Button
               size="sm"
               variant="secondary"
@@ -486,9 +690,28 @@ export default function ChatPage() {
         {/* Messages */}
         <Card className="flex flex-1 flex-col overflow-hidden">
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            {turns.length === 0 ? (
+            {!service ? (
               <div className="flex h-full items-center justify-center text-sm text-gray-400">
-                {service ? "Ask anything about your documents." : "Select a service to start chatting."}
+                Select a service to start chatting.
+              </div>
+            ) : loadingMessages ? (
+              <div className="flex h-full items-center justify-center">
+                <span className="inline-flex gap-1">
+                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-300 [animation-delay:-0.3s]" />
+                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-300 [animation-delay:-0.15s]" />
+                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-300" />
+                </span>
+              </div>
+            ) : !activeSessionId ? (
+              <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-gray-400">
+                <p>No session selected.</p>
+                <Button size="sm" onClick={() => createSession.mutate()} disabled={createSession.isPending}>
+                  Start new chat
+                </Button>
+              </div>
+            ) : turns.length === 0 ? (
+              <div className="flex h-full items-center justify-center text-sm text-gray-400">
+                Ask anything about your documents.
               </div>
             ) : (
               turns.map((turn) => <MessageBubble key={turn.id} turn={turn} />)
@@ -502,11 +725,17 @@ export default function ChatPage() {
               <Textarea
                 rows={2}
                 className="resize-none text-sm"
-                placeholder={service ? "Ask a question… (Enter to send, Shift+Enter for newline)" : "Select a service first"}
+                placeholder={
+                  !service
+                    ? "Select a service first"
+                    : !activeSessionId
+                      ? "Create a session to start"
+                      : "Ask a question… (Enter to send, Shift+Enter for newline)"
+                }
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                disabled={!service || streaming}
+                disabled={!service || !activeSessionId || streaming}
               />
               {streaming ? (
                 <Button variant="danger" onClick={stopStream} className="self-end">
@@ -515,7 +744,7 @@ export default function ChatPage() {
               ) : (
                 <Button
                   onClick={sendMessage}
-                  disabled={!service || !input.trim()}
+                  disabled={!service || !activeSessionId || !input.trim()}
                   className="self-end flex items-center gap-1.5"
                 >
                   <SendIcon />
