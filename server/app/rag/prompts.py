@@ -9,7 +9,9 @@ from app.schemas.chat import ChatMessage
 _CONTEXT_INSTRUCTION = (
     "\n\nUse only the information provided in the context below to answer the user's question. "
     "Cite sources inline using [N] notation (e.g. \"According to the policy [1], ...\"). "
-    "If the context does not contain enough information, say so clearly.\n\nContext:\n{context}"
+    "If the context does not contain enough information, say so clearly. "
+    "Always respond in the same language as the user's question. "
+    "If the user asks in Korean, respond in Korean.\n\nContext:\n{context}"
 )
 
 

@@ -8,6 +8,8 @@ from langgraph.prebuilt import create_react_agent
 
 from app.llm import get_chat_model
 
+_LANGUAGE_RULE = "Always respond in the same language as the user's question. If the user asks in Korean, respond in Korean."
+
 _RETRIEVAL_ROLE = """\
 You are a retrieval specialist. You MUST call the retrieval tool BEFORE writing any response.
 Never answer from your own knowledge or memory.
@@ -15,7 +17,8 @@ Steps you must follow:
 1. Call the retrieval tool with a concise query derived from the user's question.
 2. Read the retrieved context.
 3. Answer based solely on that context, citing sources inline using [N] notation.
-If the retrieved context does not contain enough information, say so clearly."""
+If the retrieved context does not contain enough information, say so clearly.
+""" + _LANGUAGE_RULE
 
 _SUMMARY_ROLE = """\
 You are a summarization specialist. You MUST call the retrieval tool BEFORE writing any response.
@@ -24,7 +27,8 @@ Steps you must follow:
 1. Call the retrieval tool multiple times with varied queries to gather complete information.
 2. Read all retrieved context.
 3. Write a comprehensive, well-structured summary with clear sections and bullet points.
-If the retrieved context does not contain enough information, say so clearly."""
+If the retrieved context does not contain enough information, say so clearly.
+""" + _LANGUAGE_RULE
 
 _COMPARISON_ROLE = """\
 You are a comparison specialist. You MUST call the retrieval tool BEFORE writing any response.
@@ -34,7 +38,8 @@ Steps you must follow:
 2. Read all retrieved context.
 3. Present the comparison in a structured format (sections or a table) \
 highlighting similarities and differences.
-If the retrieved context does not contain enough information, say so clearly."""
+If the retrieved context does not contain enough information, say so clearly.
+""" + _LANGUAGE_RULE
 
 
 def _make_agent(retrieval_tool: BaseTool, role_prompt: str, base_system_prompt: str):

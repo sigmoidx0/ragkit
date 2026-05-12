@@ -48,6 +48,10 @@ class DoneEvent(BaseModel):
     usage: UsageInfo | None = None
 
 
+class SupervisorRouteEvent(BaseModel):
+    agent_type: Literal["retrieval", "summary", "comparison"]
+
+
 class ErrorEvent(BaseModel):
     error: str
 
@@ -71,6 +75,7 @@ class ChatSessionResponse(BaseModel):
 class SessionMessageResponse(BaseModel):
     role: str
     content: str
+    sources: list[SourceItem] = Field(default_factory=list)
 
 
 class SessionChatRequest(BaseModel):

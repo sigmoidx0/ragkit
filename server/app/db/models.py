@@ -102,6 +102,17 @@ class ChatSession(TimestampMixin, Base):
     title: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
 
+class ChatTurnSources(Base):
+    """Sources retrieved for each assistant turn, keyed by (session_id, turn_index)."""
+    __tablename__ = "chat_turn_sources"
+    __table_args__ = (UniqueConstraint("session_id", "turn_index", name="uq_turn_sources"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[int] = mapped_column(Integer, ForeignKey("chat_sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+    turn_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    sources_json: Mapped[list[Any]] = mapped_column(JSON, nullable=False, default=list)
+
+
 class PipelineStatus(str, enum.Enum):
     draft = "draft"
     active = "active"

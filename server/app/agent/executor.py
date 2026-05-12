@@ -15,12 +15,13 @@ from sqlalchemy.orm import Session
 
 from app.agent.graph import build_multi_agent_graph
 from app.core.config import get_settings
-from app.db.models import SystemPrompt
+from app.db.models import ChatTurnSources, SystemPrompt
 from app.schemas.chat import (
     AgentStepEvent,
     ChatMessage,
     DoneEvent,
     ErrorEvent,
+    SupervisorRouteEvent,
     TokenEvent,
 )
 
@@ -79,7 +80,17 @@ async def _stream_graph(graph, sources_store: dict, input_state: dict, run_confi
             kind = event["event"]
             name = event.get("name", "")
 
-            if kind == "on_chain_start" and name in _SUB_AGENT_NODES:
+            if kind == "on_chain_end" and name == "supervisor":
+                output = event["data"].get("output") or {}
+                agent_type = output.get("agent_type", "")
+                if agent_type:
+                    logger.debug("[stream] supervisor routed to agent_type=%r", agent_type)
+                    yield _sse(
+                        "supervisor_route",
+                        SupervisorRouteEvent(agent_type=agent_type).model_dump(),
+                    )
+
+            elif kind == "on_chain_start" and name in _SUB_AGENT_NODES:
                 logger.debug("[stream] entering sub-agent node=%r", name)
                 _in_sub_agent = True
 
@@ -145,6 +156,20 @@ async def agent_stream(
         yield chunk
 
 
+def _save_turn_sources(db: Session, session_id: int, turn_index: int, sources: list[dict]) -> None:
+    existing = db.execute(
+        select(ChatTurnSources).where(
+            ChatTurnSources.session_id == session_id,
+            ChatTurnSources.turn_index == turn_index,
+        )
+    ).scalar_one_or_none()
+    if existing:
+        existing.sources_json = sources
+    else:
+        db.add(ChatTurnSources(session_id=session_id, turn_index=turn_index, sources_json=sources))
+    db.commit()
+
+
 async def session_agent_stream(
     db: Session,
     service_id: int,
@@ -159,12 +184,24 @@ async def session_agent_stream(
     _top_k = top_k or cfg.chat.default_top_k
     system_prompt = await asyncio.to_thread(_load_system_prompt, db, service_id)
 
+    checkpointer = get_checkpointer()
     graph, sources_store = build_multi_agent_graph(
-        db, service_id, _top_k, system_prompt, checkpointer=get_checkpointer()
+        db, service_id, _top_k, system_prompt, checkpointer=checkpointer
     )
+
+    # Count existing AI turns to get the index for this new turn
+    cp_tuple = await checkpointer.aget_tuple({"configurable": {"thread_id": thread_id}})
+    ai_turn_index = 0
+    if cp_tuple:
+        lc_msgs = cp_tuple.checkpoint.get("channel_values", {}).get("messages", [])
+        ai_turn_index = sum(1 for m in lc_msgs if isinstance(m, AIMessage))
 
     input_state = {"messages": [HumanMessage(content=new_message)], "agent_type": ""}
     run_config = {"configurable": {"thread_id": thread_id}}
 
     async for chunk in _stream_graph(graph, sources_store, input_state, run_config):
         yield chunk
+
+    all_sources = [s.model_dump() for sources in sources_store.values() for s in sources]
+    if all_sources:
+        await asyncio.to_thread(_save_turn_sources, db, int(thread_id), ai_turn_index, all_sources)

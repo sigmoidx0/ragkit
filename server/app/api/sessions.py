@@ -13,12 +13,15 @@ from app.agent.checkpoint import get_checkpointer
 from app.agent.executor import session_agent_stream
 from app.api.deps import CurrentUser, DbDep, ServiceMemberDep
 from app.core.config import get_settings
-from app.db.models import ChatSession
+from app.db.models import ChatSession, ChatTurnSources
+from sqlalchemy import text
+
 from app.schemas.chat import (
     ChatSessionCreate,
     ChatSessionResponse,
     SessionChatRequest,
     SessionMessageResponse,
+    SourceItem,
 )
 
 router = APIRouter(tags=["sessions"])
@@ -87,13 +90,32 @@ async def list_messages(
     if not cp_tuple:
         return []
     lc_msgs = cp_tuple.checkpoint.get("channel_values", {}).get("messages", [])
+
+    # Load stored sources indexed by assistant turn index
+    rows = db.execute(
+        select(ChatTurnSources).where(ChatTurnSources.session_id == session_id)
+    ).scalars().all()
+    sources_by_turn: dict[int, list[SourceItem]] = {
+        row.turn_index: [SourceItem(**s) for s in row.sources_json]
+        for row in rows
+    }
+
     result: list[SessionMessageResponse] = []
+    ai_turn = 0
     for msg in lc_msgs:
         if isinstance(msg, HumanMessage):
             result.append(SessionMessageResponse(role="user", content=str(msg.content)))
         elif isinstance(msg, AIMessage) and msg.content:
-            result.append(SessionMessageResponse(role="assistant", content=str(msg.content)))
+            result.append(SessionMessageResponse(
+                role="assistant",
+                content=str(msg.content),
+                sources=sources_by_turn.get(ai_turn, []),
+            ))
+            ai_turn += 1
     return result
+
+
+_CHECKPOINT_TABLES = ("checkpoints", "writes")
 
 
 @router.delete("/services/{service_id}/sessions/{session_id}", status_code=204)
@@ -106,6 +128,8 @@ def delete_session(
 ) -> None:
     session = _get_session_or_404(db, session_id, user.id, service_id)
     db.delete(session)
+    for table in _CHECKPOINT_TABLES:
+        db.execute(text(f"DELETE FROM {table} WHERE thread_id = :tid"), {"tid": str(session_id)})  # noqa: S608
     db.commit()
 
 

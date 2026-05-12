@@ -136,7 +136,9 @@ class ChatSection(BaseModel):
     fallback_system_prompt: str = (
         "You are a helpful assistant. Answer questions based on the provided context. "
         "Cite sources inline using [N] notation (e.g. \"According to the policy [1], ...\"). "
-        "If the context does not contain enough information, say so clearly."
+        "If the context does not contain enough information, say so clearly. "
+        "Always respond in the same language as the user's question. "
+        "If the user asks in Korean, respond in Korean."
     )
 
 
