@@ -33,7 +33,7 @@ def _make_agent(retrieval_tool: BaseTool, role_prompt: str, base_system_prompt: 
     return create_react_agent(
         get_chat_model(),
         [retrieval_tool],
-        state_modifier=SystemMessage(content=system_prompt),
+        prompt=SystemMessage(content=system_prompt),
     )
 
 

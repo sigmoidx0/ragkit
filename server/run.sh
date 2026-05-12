@@ -6,9 +6,10 @@ cd "$(dirname "$0")"
 HOST="${HOST:-0.0.0.0}"
 PORT="${PORT:-8000}"
 RELOAD="${RELOAD:-true}"
+LOG_LEVEL="${LOG_LEVEL:-info}"
 
 exec uv run uvicorn app.main:app \
   --host "$HOST" \
   --port "$PORT" \
   $( [ "$RELOAD" = "true" ] && echo "--reload" ) \
-  --log-level info
+  --log-level "${LOG_LEVEL}"

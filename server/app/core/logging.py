@@ -1,11 +1,16 @@
 import logging
+import os
 import sys
 from pathlib import Path
 
 _LOG_FILE = Path(__file__).parents[3] / "logs" / "server.log"
 
 
-def configure_logging(level: int = logging.INFO) -> None:
+def configure_logging(level: int | None = None) -> None:
+    if level is None:
+        env = os.environ.get("LOG_LEVEL", "INFO").upper()
+        level = getattr(logging, env, logging.INFO)
+
     fmt = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
 
     stderr_handler = logging.StreamHandler(sys.stderr)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Literal
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
@@ -14,6 +15,8 @@ from app.agent.state import MultiAgentState
 from app.agent.tools import make_retrieval_tool
 from app.llm import get_chat_model
 from app.schemas.chat import SourceItem
+
+logger = logging.getLogger(__name__)
 
 
 # ── Supervisor ────────────────────────────────────────────────────────────────
@@ -28,6 +31,7 @@ def _make_supervisor_node():
         user_msgs = [m for m in state["messages"] if isinstance(m, HumanMessage)]
         last = str(user_msgs[-1].content) if user_msgs else ""
 
+        logger.debug("[supervisor] classifying query: %r", last[:120])
         result: _SupervisorDecision = await llm.ainvoke([
             SystemMessage(
                 "Classify the user's intent into one of three categories:\n"
@@ -37,6 +41,7 @@ def _make_supervisor_node():
             ),
             HumanMessage(content=last),
         ])
+        logger.debug("[supervisor] → routed to agent_type=%r", result.agent_type)
         return {"agent_type": result.agent_type}
 
     return supervisor_node
@@ -47,8 +52,10 @@ def _make_supervisor_node():
 def _wrap_agent(agent):
     """Invoke a compiled ReAct agent and return only the final AI message."""
     async def node(state: MultiAgentState) -> dict:
+        logger.debug("[%s] starting (history_len=%d)", node.__qualname__, len(state["messages"]))
         result = await agent.ainvoke({"messages": state["messages"]})
         ai_messages = [m for m in result["messages"] if isinstance(m, AIMessage)]
+        logger.debug("[%s] finished (output_msgs=%d)", node.__qualname__, len(ai_messages))
         return {"messages": ai_messages[-1:] if ai_messages else []}
     return node
 

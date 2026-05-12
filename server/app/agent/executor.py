@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from typing import AsyncIterator
+
+logger = logging.getLogger(__name__)
 
 from langchain_core.messages import AIMessage, HumanMessage
 from sqlalchemy import select
@@ -67,16 +70,27 @@ def _token_sse_from_chunk(event: dict) -> list[str]:
 
 
 async def _stream_graph(graph, sources_store: dict, input_state: dict, run_config: dict):
+    # on_chat_model_stream events inside sub-agents carry langgraph_node="agent"
+    # (the inner ReAct node), not the outer node name. Track entry/exit instead.
     _current_query = ""
+    _in_sub_agent = False
     try:
         async for event in graph.astream_events(input_state, config=run_config, version="v2"):
             kind = event["event"]
             name = event.get("name", "")
-            node = event.get("metadata", {}).get("langgraph_node", "")
 
-            if kind == "on_tool_start" and name == "retrieval":
+            if kind == "on_chain_start" and name in _SUB_AGENT_NODES:
+                logger.debug("[stream] entering sub-agent node=%r", name)
+                _in_sub_agent = True
+
+            elif kind == "on_chain_end" and name in _SUB_AGENT_NODES:
+                logger.debug("[stream] sub-agent node=%r finished", name)
+                _in_sub_agent = False
+
+            elif kind == "on_tool_start" and name == "retrieval":
                 _current_query = (event["data"].get("input") or {}).get("query", "")
                 if _current_query:
+                    logger.debug("[stream] tool_call retrieval query=%r", _current_query)
                     yield _sse(
                         "agent_step",
                         AgentStepEvent(
@@ -86,6 +100,7 @@ async def _stream_graph(graph, sources_store: dict, input_state: dict, run_confi
 
             elif kind == "on_tool_end" and name == "retrieval":
                 sources = sources_store.get(_current_query, [])
+                logger.debug("[stream] observation retrieval sources=%d", len(sources))
                 yield _sse(
                     "agent_step",
                     AgentStepEvent(
@@ -93,14 +108,16 @@ async def _stream_graph(graph, sources_store: dict, input_state: dict, run_confi
                     ).model_dump(),
                 )
 
-            elif kind == "on_chat_model_stream" and node in _SUB_AGENT_NODES:
+            elif kind == "on_chat_model_stream" and _in_sub_agent:
                 for token_sse in _token_sse_from_chunk(event):
                     yield token_sse
 
     except Exception as exc:
+        logger.debug("[stream] error: %s", exc)
         yield _sse("error", ErrorEvent(error=str(exc)).model_dump())
         return
 
+    logger.debug("[stream] pipeline done")
     yield _sse("done", DoneEvent(finish_reason="stop").model_dump())
 
 
