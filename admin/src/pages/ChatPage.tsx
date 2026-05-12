@@ -8,7 +8,7 @@ import { useService } from "@/services/ServiceProvider";
 import { useAuth } from "@/auth/AuthProvider";
 import { Button, Card, Textarea, Badge } from "@/components/ui";
 import { cn } from "@/lib/cn";
-import type { AgentStep, ChatRole, ChatSession, ChatTurn, SourceItem, SystemPrompt } from "@/api/types";
+import type { AgentRouteType, AgentStep, ChatRole, ChatSession, ChatTurn, SourceItem, SystemPrompt } from "@/api/types";
 
 // ── Icons ────────────────────────────────────────────────────────────────────
 
@@ -79,13 +79,182 @@ function formatSessionDate(dateStr: string): string {
   return date.toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
+// ── Agent flow diagram ────────────────────────────────────────────────────────
+
+const AGENT_LABELS: Record<AgentRouteType, string> = {
+  retrieval: "Retrieval",
+  summary: "Summary",
+  comparison: "Comparison",
+};
+
+const AGENT_ACTIVE_CLS: Record<AgentRouteType, string> = {
+  retrieval: "border-teal-400 bg-teal-50 text-teal-700 dark:border-teal-600 dark:bg-teal-900/40 dark:text-teal-300",
+  summary: "border-blue-400 bg-blue-50 text-blue-700 dark:border-blue-600 dark:bg-blue-900/40 dark:text-blue-300",
+  comparison: "border-purple-400 bg-purple-50 text-purple-700 dark:border-purple-600 dark:bg-purple-900/40 dark:text-purple-300",
+};
+
+const AGENT_BADGE_CLS: Record<AgentRouteType, string> = {
+  retrieval: "text-teal-600 dark:text-teal-400",
+  summary: "text-blue-600 dark:text-blue-400",
+  comparison: "text-purple-600 dark:text-purple-400",
+};
+
+function FlowArrow() {
+  return <span className="text-gray-300 dark:text-gray-600 select-none">→</span>;
+}
+
+function AgentFlowDiagram({
+  agentRoute,
+  isSearching,
+  hasToolCalls,
+}: {
+  agentRoute?: AgentRouteType;
+  isSearching: boolean;
+  hasToolCalls: boolean;
+}) {
+  const agents: AgentRouteType[] = ["retrieval", "summary", "comparison"];
+
+  return (
+    <div className="mb-2 flex flex-wrap items-center gap-1 text-[11px]">
+      <span className="rounded-full border border-gray-200 px-2 py-0.5 text-gray-400 dark:border-gray-600 dark:text-gray-500">
+        Start
+      </span>
+      <FlowArrow />
+      <span
+        className={cn(
+          "rounded border px-2 py-0.5 transition-colors",
+          !agentRoute
+            ? "animate-pulse border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-600 dark:bg-amber-900/30 dark:text-amber-300"
+            : "border-gray-200 bg-gray-50 text-gray-500 dark:border-gray-600 dark:bg-gray-700/40 dark:text-gray-400",
+        )}
+      >
+        Supervisor
+      </span>
+      <FlowArrow />
+      <div className="flex items-center gap-1">
+        {agents.map((a) => {
+          const isActive = agentRoute === a && hasToolCalls;
+          return (
+            <span
+              key={a}
+              className={cn(
+                "rounded border px-2 py-0.5 transition-all",
+                isActive
+                  ? cn(AGENT_ACTIVE_CLS[a], isSearching && "animate-pulse")
+                  : "border-gray-100 text-gray-300 dark:border-gray-700 dark:text-gray-600",
+              )}
+            >
+              {AGENT_LABELS[a]}
+            </span>
+          );
+        })}
+      </div>
+      <FlowArrow />
+      <span className="rounded-full border border-gray-100 px-2 py-0.5 text-gray-300 dark:border-gray-700 dark:text-gray-600">
+        End
+      </span>
+    </div>
+  );
+}
+
+// ── Agent route badge (post-completion) ──────────────────────────────────────
+
+function AgentRouteBadge({ agentRoute }: { agentRoute: AgentRouteType }) {
+  return (
+    <div className="mb-1.5 text-[10px] text-gray-400 dark:text-gray-500">
+      via{" "}
+      <span className={AGENT_BADGE_CLS[agentRoute]}>
+        {AGENT_LABELS[agentRoute]} Agent
+      </span>
+    </div>
+  );
+}
+
+// ── Streaming status label ────────────────────────────────────────────────────
+
+function StreamingStatus({ turn }: { turn: ChatTurn }) {
+  if (!turn.isStreaming || turn.content) return null;
+
+  let text: string;
+  if (!turn.agentRoute) {
+    text = "Supervisor routing…";
+  } else {
+    const lastStep = turn.agentSteps[turn.agentSteps.length - 1];
+    if (!lastStep) {
+      text = `${AGENT_LABELS[turn.agentRoute]} Agent preparing…`;
+    } else if (lastStep.type === "tool_call") {
+      text = `Searching: "${lastStep.input}"`;
+    } else {
+      text = `${AGENT_LABELS[turn.agentRoute]} Agent generating…`;
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-2 text-xs text-gray-400 dark:text-gray-500">
+      <span className="inline-flex gap-1">
+        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-300 [animation-delay:-0.3s] dark:bg-gray-600" />
+        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-300 [animation-delay:-0.15s] dark:bg-gray-600" />
+        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-300 dark:bg-gray-600" />
+      </span>
+      <span className="italic">{text}</span>
+    </div>
+  );
+}
+
+// ── Score bar ─────────────────────────────────────────────────────────────────
+
+function ScoreBar({ score }: { score: number }) {
+  const pct = Math.min(Math.round(score * 100), 100);
+  return (
+    <span className="inline-flex items-center gap-1.5 shrink-0">
+      <span className="h-1.5 w-12 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-600">
+        <span
+          className="block h-full rounded-full bg-teal-400 dark:bg-teal-500"
+          style={{ width: `${pct}%` }}
+        />
+      </span>
+      <span className="font-mono text-[10px] tabular-nums">
+        {score < 0.01 ? score.toExponential(2) : score.toFixed(3)}
+      </span>
+    </span>
+  );
+}
+
+// ── Source card ───────────────────────────────────────────────────────────────
+
+function SourceCard({ source }: { source: SourceItem }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div
+      className="cursor-pointer rounded-lg border border-gray-100 bg-gray-50 px-3 py-1.5 text-xs transition-colors hover:border-gray-200 dark:border-gray-700 dark:bg-gray-700/40 dark:hover:border-gray-600"
+      onClick={() => setExpanded((p) => !p)}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center min-w-0">
+          <span className="mr-2 shrink-0 font-mono text-teal-500">[{source.index}]</span>
+          <span className="truncate font-medium text-gray-700 dark:text-gray-200">
+            {source.title ?? `Document #${source.document_id}`}
+          </span>
+        </div>
+        <ScoreBar score={source.score} />
+      </div>
+      {expanded && source.snippet && (
+        <p className="mt-1.5 border-t border-gray-100 pt-1.5 leading-relaxed text-gray-500 dark:border-gray-700 dark:text-gray-400">
+          {source.snippet}
+        </p>
+      )}
+    </div>
+  );
+}
+
 // ── Agent steps ───────────────────────────────────────────────────────────────
 
 function AgentSteps({ steps }: { steps: AgentStep[] }) {
   const [open, setOpen] = useState(false);
   if (steps.length === 0) return null;
 
-  const toolCalls = steps.filter((s) => s.type === "tool_call");
+  const searching = steps[steps.length - 1].type === "tool_call";
+  const completedToolCalls = steps.filter((s) => s.type === "tool_call").length;
   const totalSources = steps
     .filter((s) => s.type === "observation")
     .reduce((acc, s) => acc + (s.output?.length ?? 0), 0);
@@ -97,32 +266,42 @@ function AgentSteps({ steps }: { steps: AgentStep[] }) {
         className="flex w-full items-center gap-2 px-3 py-2 text-left text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
       >
         <ChevronIcon open={open} />
-        <span>
-          {toolCalls.length} search{toolCalls.length !== 1 ? "es" : ""} · {totalSources} source
-          {totalSources !== 1 ? "s" : ""} found
-        </span>
+        {searching ? (
+          <span className="animate-pulse">
+            {completedToolCalls} search{completedToolCalls !== 1 ? "es" : ""} · searching…
+          </span>
+        ) : (
+          <span>
+            {completedToolCalls} search{completedToolCalls !== 1 ? "es" : ""} · {totalSources} source
+            {totalSources !== 1 ? "s" : ""} found
+          </span>
+        )}
       </button>
       {open && (
         <div className="border-t border-gray-100 px-3 py-2 space-y-2 dark:border-gray-700">
-          {steps.map((step, i) => (
-            <div key={i} className="flex gap-2">
-              {step.type === "tool_call" ? (
-                <>
-                  <span className="text-teal-500">🔍</span>
-                  <span className="text-gray-600 dark:text-gray-300">
-                    Searching: <span className="font-mono">{step.input}</span>
-                  </span>
-                </>
-              ) : (
-                <>
-                  <span className="text-blue-400">📄</span>
-                  <span className="text-gray-500 dark:text-gray-400">
-                    Found {step.output?.length ?? 0} result{(step.output?.length ?? 0) !== 1 ? "s" : ""}
-                  </span>
-                </>
-              )}
-            </div>
-          ))}
+          {steps.map((step, i) => {
+            const isPending = step.type === "tool_call" && i === steps.length - 1 && searching;
+            return (
+              <div key={i} className="flex gap-2">
+                {step.type === "tool_call" ? (
+                  <>
+                    <span className={cn("text-teal-500", isPending && "animate-pulse")}>🔍</span>
+                    <span className="text-gray-600 dark:text-gray-300">
+                      Searching: <span className="font-mono">{step.input}</span>
+                      {isPending && <span className="ml-1 animate-pulse text-gray-400">…</span>}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-blue-400">📄</span>
+                    <span className="text-gray-500 dark:text-gray-400">
+                      Found {step.output?.length ?? 0} result{(step.output?.length ?? 0) !== 1 ? "s" : ""}
+                    </span>
+                  </>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -138,16 +317,7 @@ function Sources({ sources }: { sources: SourceItem[] }) {
     <div className="mt-3 space-y-1">
       <p className="text-xs font-semibold text-gray-400 dark:text-gray-500">Sources</p>
       {unique.map((s) => (
-        <div
-          key={s.index}
-          className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-1.5 text-xs dark:border-gray-700 dark:bg-gray-700/40"
-        >
-          <span className="mr-2 font-mono text-teal-500">[{s.index}]</span>
-          <span className="font-medium text-gray-700 dark:text-gray-200">
-            {s.title ?? `Document #${s.document_id}`}
-          </span>
-          <span className="ml-2 text-gray-400">score {s.score < 0.01 ? s.score.toExponential(2) : s.score.toFixed(3)}</span>
-        </div>
+        <SourceCard key={s.index} source={s} />
       ))}
     </div>
   );
@@ -160,6 +330,16 @@ function MessageBubble({ turn }: { turn: ChatTurn }) {
   return (
     <div className={cn("flex", isUser ? "justify-end" : "justify-start")}>
       <div className={cn("max-w-[80%]", isUser ? "order-2" : "order-1")}>
+        {!isUser && turn.isStreaming && (
+          <AgentFlowDiagram
+            agentRoute={turn.agentRoute}
+            isSearching={!turn.content}
+            hasToolCalls={turn.agentSteps.some((s) => s.type === "tool_call")}
+          />
+        )}
+        {!isUser && !turn.isStreaming && turn.agentRoute && turn.agentSteps.length > 0 && (
+          <AgentRouteBadge agentRoute={turn.agentRoute} />
+        )}
         {!isUser && <AgentSteps steps={turn.agentSteps} />}
         <div
           className={cn(
@@ -172,11 +352,7 @@ function MessageBubble({ turn }: { turn: ChatTurn }) {
           {isUser ? (
             <p className="whitespace-pre-wrap">{turn.content}</p>
           ) : turn.isStreaming && !turn.content ? (
-            <span className="inline-flex gap-1">
-              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400 [animation-delay:-0.3s]" />
-              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400 [animation-delay:-0.15s]" />
-              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400" />
-            </span>
+            <StreamingStatus turn={turn} />
           ) : turn.error ? (
             <p className="text-red-500">{turn.error}</p>
           ) : (
@@ -519,7 +695,7 @@ export default function ChatPage() {
             role: m.role as ChatRole,
             content: m.content,
             agentSteps: [],
-            sources: [],
+            sources: m.sources ?? [],
             isStreaming: false,
           })),
         );
@@ -581,7 +757,12 @@ export default function ChatPage() {
         undefined,
         ctrl.signal,
       )) {
-        if (event === "agent_step") {
+        if (event === "supervisor_route") {
+          const payload = JSON.parse(data) as { agent_type: AgentRouteType };
+          setTurns((prev) =>
+            prev.map((t) => (t.id === assistantId ? { ...t, agentRoute: payload.agent_type } : t)),
+          );
+        } else if (event === "agent_step") {
           const payload = JSON.parse(data) as { type: string; tool: string; input?: string; output?: SourceItem[] };
           const step: AgentStep = {
             type: payload.type as "tool_call" | "observation",

@@ -243,6 +243,7 @@ export interface ChatSession {
 export interface SessionMessage {
   role: string;
   content: string;
+  sources: SourceItem[];
 }
 
 // ---------------------------------------------------------------------------
@@ -271,6 +272,8 @@ export interface AgentStep {
   output?: SourceItem[];
 }
 
+export type AgentRouteType = "retrieval" | "summary" | "comparison";
+
 export interface ChatTurn {
   id: string;
   role: ChatRole;
@@ -278,5 +281,6 @@ export interface ChatTurn {
   agentSteps: AgentStep[];
   sources: SourceItem[];
   isStreaming: boolean;
+  agentRoute?: AgentRouteType;
   error?: string;
 }
