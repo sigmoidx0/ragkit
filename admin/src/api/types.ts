@@ -45,11 +45,19 @@ export interface TokenChunkConfig {
   encoding_name?: string;
 }
 
+export interface RegexChunkConfig {
+  strategy: "regex";
+  pattern: string;
+  chunk_size?: number;
+  chunk_overlap?: number;
+}
+
 export type ChunkConfig =
   | RecursiveChunkConfig
   | MarkdownHeaderChunkConfig
   | CharacterChunkConfig
-  | TokenChunkConfig;
+  | TokenChunkConfig
+  | RegexChunkConfig;
 
 export interface ChunkPreviewChunk {
   ordinal: number;

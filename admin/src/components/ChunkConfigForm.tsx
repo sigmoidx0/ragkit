@@ -1,11 +1,12 @@
 import { Input, Label, Select } from "@/components/ui";
-import type { ChunkConfig } from "@/api/types";
+import type { ChunkConfig, RegexChunkConfig } from "@/api/types";
 
 const STRATEGIES = [
   { value: "recursive", label: "Recursive (default)" },
   { value: "markdown_header", label: "Markdown Header" },
   { value: "character", label: "Character" },
   { value: "token", label: "Token (tiktoken)" },
+  { value: "regex", label: "Regex" },
 ] as const;
 
 const HEADER_LEVELS = ["#", "##", "###", "####"];
@@ -22,6 +23,7 @@ export function ChunkConfigForm({ value, onChange }: Props) {
     if (s === "recursive") onChange({ strategy: "recursive" });
     else if (s === "markdown_header") onChange({ strategy: "markdown_header", headers_to_split_on: ["#", "##", "###"] });
     else if (s === "character") onChange({ strategy: "character", separator: "\n\n" });
+    else if (s === "regex") onChange({ strategy: "regex", pattern: "" });
     else onChange({ strategy: "token" });
   }
 
@@ -156,6 +158,46 @@ export function ChunkConfigForm({ value, onChange }: Props) {
               <Label htmlFor="cc-char-overlap">Overlap (chars)</Label>
               <Input
                 id="cc-char-overlap"
+                type="number"
+                min={0}
+                placeholder="150"
+                value={(value as { chunk_overlap?: number }).chunk_overlap ?? ""}
+                onChange={(e) => onChange({ ...value, chunk_overlap: e.target.value ? Number(e.target.value) : undefined })}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Regex ─────────────────────────────────────────── */}
+      {strategy === "regex" && (
+        <div className="space-y-3">
+          <div>
+            <Label htmlFor="cc-regex-pattern">Pattern</Label>
+            <Input
+              id="cc-regex-pattern"
+              type="text"
+              placeholder={String.raw`\n{2,}|\.\s`}
+              value={(value as RegexChunkConfig).pattern ?? ""}
+              onChange={(e) => onChange({ ...value, pattern: e.target.value } as RegexChunkConfig)}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label htmlFor="cc-regex-size">Chunk size (chars)</Label>
+              <Input
+                id="cc-regex-size"
+                type="number"
+                min={100}
+                placeholder="1000"
+                value={(value as { chunk_size?: number }).chunk_size ?? ""}
+                onChange={(e) => onChange({ ...value, chunk_size: e.target.value ? Number(e.target.value) : undefined })}
+              />
+            </div>
+            <div>
+              <Label htmlFor="cc-regex-overlap">Overlap (chars)</Label>
+              <Input
+                id="cc-regex-overlap"
                 type="number"
                 min={0}
                 placeholder="150"

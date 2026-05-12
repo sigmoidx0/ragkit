@@ -102,6 +102,22 @@ class CharacterChunkStrategy:
         return _records_from_docs(self._splitter.split_documents(docs))
 
 
+class RegexChunkStrategy:
+    """Split on a regex pattern using CharacterTextSplitter with is_separator_regex=True."""
+
+    def __init__(self, pattern: str, chunk_size: int, chunk_overlap: int) -> None:
+        self._splitter = CharacterTextSplitter(
+            separator=pattern,
+            is_separator_regex=True,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+            add_start_index=True,
+        )
+
+    def split(self, docs: list) -> list[ChunkRecord]:
+        return _records_from_docs(self._splitter.split_documents(docs))
+
+
 class TokenChunkStrategy:
     """Split by token count using tiktoken (default: cl100k_base / GPT-4 encoding)."""
 
@@ -176,6 +192,16 @@ def chunk_strategy_from_config(config: dict[str, Any] | None) -> ChunkStrategy:
             chunk_size=config.get("chunk_size") or 512,
             chunk_overlap=config.get("chunk_overlap") or 50,
             encoding_name=config.get("encoding_name") or "cl100k_base",
+        )
+
+    if strategy == "regex":
+        pattern = config.get("pattern")
+        if not pattern:
+            raise ValueError("regex chunking strategy requires a 'pattern' field")
+        return RegexChunkStrategy(
+            pattern=pattern,
+            chunk_size=config.get("chunk_size") or defaults.chunk_size,
+            chunk_overlap=config.get("chunk_overlap") if config.get("chunk_overlap") is not None else defaults.chunk_overlap,
         )
 
     raise ValueError(f"unknown chunking strategy: {strategy!r}")
