@@ -2,6 +2,14 @@ import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
+const PREVIEW_CHAR_LIMIT = 2_000;
+
+function truncateAtNewline(text: string, limit: number): string {
+  if (text.length <= limit) return text;
+  const cut = text.lastIndexOf("\n", limit);
+  return cut > 0 ? text.slice(0, cut) : text.slice(0, limit);
+}
+
 interface MarkdownPreviewProps {
   markdown?: string;
   isLoading?: boolean;
@@ -35,6 +43,9 @@ export function MarkdownPreview({
     );
   }
 
+  const truncated = truncateAtNewline(markdown, PREVIEW_CHAR_LIMIT);
+  const isTruncated = truncated.length < markdown.length;
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 justify-end border-b border-gray-100 px-4 py-2 dark:border-gray-700">
@@ -64,12 +75,17 @@ export function MarkdownPreview({
       <div className={contentClassName}>
         {raw ? (
           <pre className="p-4 text-xs leading-relaxed whitespace-pre-wrap break-words text-gray-800 dark:text-gray-200">
-            {markdown}
+            {truncated}
           </pre>
         ) : (
           <div className="prose prose-sm max-w-none p-4 dark:prose-invert">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{markdown}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{truncated}</ReactMarkdown>
           </div>
+        )}
+        {isTruncated && (
+          <p className="px-4 py-3 text-center text-xs text-gray-400 dark:text-gray-500">
+            Showing first {PREVIEW_CHAR_LIMIT.toLocaleString()} characters of {markdown.length.toLocaleString()} total.
+          </p>
         )}
       </div>
     </div>
