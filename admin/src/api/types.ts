@@ -273,6 +273,7 @@ export interface AgentStep {
 }
 
 export type AgentRouteType = "retrieval" | "summary" | "comparison";
+export type RetrievalMode = "on" | "off" | "auto";
 
 export interface ChatTurn {
   id: string;

@@ -2,6 +2,7 @@ import { apiFetch, apiFetchBlob, apiSSE } from "./client";
 import type {
   ChatMessage,
   ChatSession,
+  RetrievalMode,
   ChunkPreviewResponse,
   DocumentListResponse,
   DocumentSummary,
@@ -141,6 +142,6 @@ export const SessionsApi = {
     apiFetch<SessionMessage[]>(`/services/${serviceId}/sessions/${sessionId}/messages`),
   remove: (serviceId: number, sessionId: number) =>
     apiFetch<void>(`/services/${serviceId}/sessions/${sessionId}`, { method: "DELETE" }),
-  chat: (serviceId: number, sessionId: number, message: string, topK?: number, signal?: AbortSignal) =>
-    apiSSE(`/services/${serviceId}/sessions/${sessionId}/chat`, { message, top_k: topK }, signal),
+  chat: (serviceId: number, sessionId: number, message: string, topK?: number, signal?: AbortSignal, retrievalMode?: RetrievalMode) =>
+    apiSSE(`/services/${serviceId}/sessions/${sessionId}/chat`, { message, top_k: topK, retrieval_mode: retrievalMode ?? "on" }, signal),
 };

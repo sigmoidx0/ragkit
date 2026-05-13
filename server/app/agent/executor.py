@@ -25,7 +25,7 @@ from app.schemas.chat import (
     TokenEvent,
 )
 
-_SUB_AGENT_NODES = {"retrieval_agent", "summary_agent", "comparison_agent"}
+_SUB_AGENT_NODES = {"retrieval_agent", "summary_agent", "comparison_agent", "direct_agent"}
 
 
 def _sse(event: str, payload: dict) -> str:
@@ -83,7 +83,7 @@ async def _stream_graph(graph, sources_store: dict, input_state: dict, run_confi
             if kind == "on_chain_end" and name == "supervisor":
                 output = event["data"].get("output") or {}
                 agent_type = output.get("agent_type", "")
-                if agent_type:
+                if agent_type and agent_type != "direct":
                     logger.debug("[stream] supervisor routed to agent_type=%r", agent_type)
                     yield _sse(
                         "supervisor_route",
@@ -138,6 +138,7 @@ async def agent_stream(
     messages: list[ChatMessage],
     top_k: int | None = None,
     filters: dict | None = None,
+    retrieval_mode: str = "on",
 ) -> AsyncIterator[str]:
     cfg = get_settings()
     _top_k = top_k or cfg.chat.default_top_k
@@ -148,7 +149,7 @@ async def agent_stream(
 
     system_prompt = await asyncio.to_thread(_load_system_prompt, db, service_id)
     graph, sources_store = build_multi_agent_graph(
-        db, service_id, _top_k, system_prompt, checkpointer=None
+        db, service_id, _top_k, system_prompt, retrieval_mode, checkpointer=None
     )
 
     input_state = {"messages": _to_lc_messages(messages), "agent_type": ""}
@@ -177,6 +178,7 @@ async def session_agent_stream(
     new_message: str,
     top_k: int | None = None,
     filters: dict | None = None,
+    retrieval_mode: str = "on",
 ) -> AsyncIterator[str]:
     from app.agent.checkpoint import get_checkpointer
 
@@ -186,7 +188,7 @@ async def session_agent_stream(
 
     checkpointer = get_checkpointer()
     graph, sources_store = build_multi_agent_graph(
-        db, service_id, _top_k, system_prompt, checkpointer=checkpointer
+        db, service_id, _top_k, system_prompt, retrieval_mode, checkpointer=checkpointer
     )
 
     # Count existing AI turns to get the index for this new turn

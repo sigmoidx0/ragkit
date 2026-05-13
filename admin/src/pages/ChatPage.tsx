@@ -8,7 +8,7 @@ import { useService } from "@/services/ServiceProvider";
 import { useAuth } from "@/auth/AuthProvider";
 import { Button, Card, Textarea, Badge } from "@/components/ui";
 import { cn } from "@/lib/cn";
-import type { AgentRouteType, AgentStep, ChatRole, ChatSession, ChatTurn, SourceItem, SystemPrompt } from "@/api/types";
+import type { AgentRouteType, AgentStep, ChatRole, ChatSession, ChatTurn, RetrievalMode, SourceItem, SystemPrompt } from "@/api/types";
 
 // ── Icons ────────────────────────────────────────────────────────────────────
 
@@ -612,6 +612,7 @@ export default function ChatPage() {
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [showPrompts, setShowPrompts] = useState(false);
+  const [retrievalMode, setRetrievalMode] = useState<RetrievalMode>("auto");
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const prevServiceIdRef = useRef<number | null>(null);
@@ -756,6 +757,7 @@ export default function ChatPage() {
         query,
         undefined,
         ctrl.signal,
+        retrievalMode,
       )) {
         if (event === "supervisor_route") {
           const payload = JSON.parse(data) as { agent_type: AgentRouteType };
@@ -902,6 +904,23 @@ export default function ChatPage() {
 
           {/* Input */}
           <div className="border-t border-gray-100 p-3 dark:border-gray-700">
+            <div className="mb-2 flex items-center gap-1 text-[11px]">
+              <span className="mr-1 text-gray-400 dark:text-gray-500">Retrieval</span>
+              {(["auto", "on", "off"] as RetrievalMode[]).map((mode) => (
+                <button
+                  key={mode}
+                  onClick={() => setRetrievalMode(mode)}
+                  className={cn(
+                    "rounded border px-2 py-0.5 transition-colors capitalize",
+                    retrievalMode === mode
+                      ? "border-indigo-400 bg-indigo-50 text-indigo-700 dark:border-indigo-500 dark:bg-indigo-900/40 dark:text-indigo-300"
+                      : "border-gray-200 text-gray-400 hover:border-gray-300 hover:text-gray-500 dark:border-gray-600 dark:text-gray-500",
+                  )}
+                >
+                  {mode}
+                </button>
+              ))}
+            </div>
             <div className="flex gap-2">
               <Textarea
                 rows={2}

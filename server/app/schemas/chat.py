@@ -15,6 +15,7 @@ class ChatRequest(BaseModel):
     messages: list[ChatMessage] = Field(min_length=1)
     top_k: int | None = None
     filters: dict | None = None
+    retrieval_mode: Literal["on", "off", "auto"] = "on"
 
 
 # ── SSE event payloads ───────────────────────────────────────────────────────
@@ -82,3 +83,4 @@ class SessionChatRequest(BaseModel):
     message: str = Field(min_length=1)
     top_k: int | None = None
     filters: dict | None = None
+    retrieval_mode: Literal["on", "off", "auto"] = "on"

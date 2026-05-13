@@ -61,3 +61,17 @@ def make_summary_agent(retrieval_tool: BaseTool, base_system_prompt: str):
 
 def make_comparison_agent(retrieval_tool: BaseTool, base_system_prompt: str):
     return _make_agent(retrieval_tool, _COMPARISON_ROLE, base_system_prompt)
+
+
+_DIRECT_ROLE = """\
+You are a helpful assistant. Answer the user's question directly using your own knowledge.
+""" + _LANGUAGE_RULE
+
+
+def make_direct_agent(base_system_prompt: str):
+    system_prompt = f"{base_system_prompt}\n\n{_DIRECT_ROLE}"
+    return create_react_agent(
+        get_chat_model(),
+        [],
+        prompt=SystemMessage(content=system_prompt),
+    )

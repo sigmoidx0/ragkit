@@ -152,7 +152,7 @@ async def session_chat(
     db.commit()
 
     return StreamingResponse(
-        session_agent_stream(db, service_id, str(session_id), body.message, body.top_k, body.filters),
+        session_agent_stream(db, service_id, str(session_id), body.message, body.top_k, body.filters, body.retrieval_mode),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
