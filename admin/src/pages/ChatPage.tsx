@@ -56,6 +56,14 @@ function PlusIcon() {
   );
 }
 
+function MenuIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5">
+      <path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z" />
+    </svg>
+  );
+}
+
 function TrashIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" className="h-3.5 w-3.5">
@@ -379,6 +387,7 @@ function SessionSidebar({
   onNew,
   creating,
   disabled,
+  onClose,
 }: {
   sessions: ChatSession[];
   activeId: number | null;
@@ -387,14 +396,23 @@ function SessionSidebar({
   onNew: () => void;
   creating: boolean;
   disabled: boolean;
+  onClose?: () => void;
 }) {
   return (
     <div className="flex h-full flex-col">
-      <div className="p-3 border-b border-gray-100 dark:border-gray-700">
+      <div className="flex items-center gap-2 p-3 border-b border-gray-100 dark:border-gray-700">
+        {onClose && (
+          <button
+            className="shrink-0 rounded-lg p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 md:hidden"
+            onClick={onClose}
+          >
+            <CloseIcon />
+          </button>
+        )}
         <Button
           size="sm"
           variant="secondary"
-          className="w-full flex items-center justify-center gap-1.5"
+          className="flex flex-1 items-center justify-center gap-1.5"
           onClick={onNew}
           disabled={creating || disabled}
         >
@@ -612,6 +630,7 @@ export default function ChatPage() {
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [showPrompts, setShowPrompts] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [retrievalMode, setRetrievalMode] = useState<RetrievalMode>("auto");
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -827,30 +846,63 @@ export default function ChatPage() {
   }
 
   return (
+    <>
+      {/* Mobile backdrop for sidebar */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/40 md:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      {/* Mobile backdrop for prompts panel */}
+      {showPrompts && (
+        <div
+          className="fixed inset-0 z-40 bg-black/40 md:hidden"
+          onClick={() => setShowPrompts(false)}
+        />
+      )}
+
     <div className="flex h-[calc(100vh-8rem)] gap-4">
       {/* Sessions sidebar */}
-      <Card className="w-52 shrink-0 overflow-hidden flex flex-col p-0">
-        <SessionSidebar
-          sessions={sessions}
-          activeId={activeSessionId}
-          onSelect={(id) => {
-            if (id !== activeSessionId) {
-              stopStream();
-              setActiveSessionId(id);
-            }
-          }}
-          onDelete={(id) => deleteSession.mutate(id)}
-          onNew={() => createSession.mutate()}
-          creating={createSession.isPending}
-          disabled={!service}
-        />
-      </Card>
+      <div
+        className={cn(
+          "fixed inset-y-0 left-0 z-50 w-64 transition-transform duration-200",
+          "md:static md:w-52 md:shrink-0 md:translate-x-0 md:z-auto",
+          sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
+        )}
+      >
+        <Card className="flex h-full flex-col overflow-hidden p-0 rounded-none md:rounded-2xl">
+          <SessionSidebar
+            sessions={sessions}
+            activeId={activeSessionId}
+            onSelect={(id) => {
+              if (id !== activeSessionId) {
+                stopStream();
+                setActiveSessionId(id);
+              }
+              setSidebarOpen(false);
+            }}
+            onDelete={(id) => deleteSession.mutate(id)}
+            onNew={() => createSession.mutate()}
+            creating={createSession.isPending}
+            disabled={!service}
+            onClose={() => setSidebarOpen(false)}
+          />
+        </Card>
+      </div>
 
       {/* Chat area */}
       <div className="flex flex-1 flex-col min-w-0">
         {/* Header */}
         <div className="mb-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
+            <button
+              className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700 md:hidden"
+              onClick={() => setSidebarOpen(true)}
+            >
+              <MenuIcon />
+            </button>
             {activePrompt ? (
               <Badge tone="green">{activePrompt.name}</Badge>
             ) : (
@@ -958,14 +1010,17 @@ export default function ChatPage() {
 
       {/* System prompts panel */}
       {showPrompts && service && (
-        <Card className="w-80 shrink-0 overflow-hidden flex flex-col">
-          <SystemPromptsPanel
-            serviceId={service.id}
-            onClose={() => setShowPrompts(false)}
-            isAdmin={isAdmin}
-          />
-        </Card>
+        <div className="fixed inset-y-0 right-0 z-50 w-full max-w-sm md:static md:w-80 md:shrink-0 md:z-auto">
+          <Card className="flex h-full flex-col overflow-hidden rounded-none md:rounded-2xl">
+            <SystemPromptsPanel
+              serviceId={service.id}
+              onClose={() => setShowPrompts(false)}
+              isAdmin={isAdmin}
+            />
+          </Card>
+        </div>
       )}
     </div>
+    </>
   );
 }
