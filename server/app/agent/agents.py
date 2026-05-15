@@ -2,9 +2,17 @@
 
 from __future__ import annotations
 
-from langchain_core.messages import SystemMessage
+import asyncio
+from typing import Annotated
+
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool
+from langgraph.graph import END, START, StateGraph
+from langgraph.graph.message import add_messages
 from langgraph.prebuilt import create_react_agent
+from pydantic import BaseModel
+from typing_extensions import TypedDict
 
 from app.llm import get_chat_model
 
@@ -59,8 +67,54 @@ def make_summary_agent(retrieval_tool: BaseTool, base_system_prompt: str):
     return _make_agent(retrieval_tool, _SUMMARY_ROLE, base_system_prompt)
 
 
+class _ComparisonPlan(BaseModel):
+    queries: list[str]
+
+
+class _ComparisonState(TypedDict):
+    messages: Annotated[list[BaseMessage], add_messages]
+    queries: list[str]
+    contexts: list[str]
+
+
 def make_comparison_agent(retrieval_tool: BaseTool, base_system_prompt: str):
-    return _make_agent(retrieval_tool, _COMPARISON_ROLE, base_system_prompt)
+    system_prompt = f"{base_system_prompt}\n\n{_COMPARISON_ROLE}"
+
+    async def plan(state: _ComparisonState) -> dict:
+        llm = get_chat_model().with_structured_output(_ComparisonPlan)
+        user_msgs = [m for m in state["messages"] if isinstance(m, HumanMessage)]
+        result = await llm.ainvoke([
+            SystemMessage(content="Generate one focused search query per item being compared."),
+            user_msgs[-1],
+        ])
+        return {"queries": result.queries}
+
+    async def retrieve(state: _ComparisonState, config: RunnableConfig) -> dict:
+        tasks = [retrieval_tool.ainvoke({"query": q}, config=config) for q in state["queries"]]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        return {"contexts": [r if isinstance(r, str) else "" for r in results]}
+
+    async def synthesize(state: _ComparisonState) -> dict:
+        context_block = "\n\n---\n\n".join(
+            f"[Query: {q}]\n{ctx}"
+            for q, ctx in zip(state["queries"], state["contexts"])
+        )
+        response = await get_chat_model().ainvoke([
+            SystemMessage(content=system_prompt),
+            *state["messages"],
+            HumanMessage(content=f"Retrieved context:\n\n{context_block}"),
+        ])
+        return {"messages": [response]}
+
+    g = StateGraph(_ComparisonState)
+    g.add_node("plan", plan)
+    g.add_node("retrieve", retrieve)
+    g.add_node("synthesize", synthesize)
+    g.add_edge(START, "plan")
+    g.add_edge("plan", "retrieve")
+    g.add_edge("retrieve", "synthesize")
+    g.add_edge("synthesize", END)
+    return g.compile()
 
 
 _DIRECT_ROLE = """\

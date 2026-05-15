@@ -165,14 +165,32 @@ function AgentFlowDiagram({
   );
 }
 
-// ── Agent route badge (post-completion) ──────────────────────────────────────
+// ── Agent route badge ────────────────────────────────────────────────────────
 
-function AgentRouteBadge({ agentRoute }: { agentRoute: AgentRouteType }) {
+const AGENT_DOT_CLS: Record<AgentRouteType, string> = {
+  retrieval: "bg-teal-400 dark:bg-teal-500",
+  summary: "bg-blue-400 dark:bg-blue-500",
+  comparison: "bg-purple-400 dark:bg-purple-500",
+};
+
+function AgentRouteBadge({ agentRoute, isActive = false }: { agentRoute: AgentRouteType; isActive?: boolean }) {
   return (
-    <div className="mb-1.5 text-[10px] text-gray-400 dark:text-gray-500">
-      via{" "}
-      <span className={AGENT_BADGE_CLS[agentRoute]}>
-        {AGENT_LABELS[agentRoute]} Agent
+    <div className="mb-1.5 flex items-center gap-1.5 text-[10px]">
+      <span
+        className={cn(
+          "h-1.5 w-1.5 rounded-full",
+          AGENT_DOT_CLS[agentRoute],
+          isActive && "animate-pulse",
+        )}
+      />
+      <span className="text-gray-400 dark:text-gray-500">
+        via{" "}
+        <span className={cn(AGENT_BADGE_CLS[agentRoute], isActive && "font-medium")}>
+          {AGENT_LABELS[agentRoute]} Agent
+        </span>
+        {isActive && (
+          <span className="ml-1 italic text-gray-300 dark:text-gray-600">running…</span>
+        )}
       </span>
     </div>
   );
@@ -338,15 +356,15 @@ function MessageBubble({ turn }: { turn: ChatTurn }) {
   return (
     <div className={cn("flex", isUser ? "justify-end" : "justify-start")}>
       <div className={cn("max-w-[80%]", isUser ? "order-2" : "order-1")}>
-        {!isUser && turn.isStreaming && (
+        {!isUser && turn.isStreaming && !turn.agentRoute && (
           <AgentFlowDiagram
             agentRoute={turn.agentRoute}
             isSearching={!turn.content}
             hasToolCalls={turn.agentSteps.some((s) => s.type === "tool_call")}
           />
         )}
-        {!isUser && !turn.isStreaming && turn.agentRoute && turn.agentSteps.length > 0 && (
-          <AgentRouteBadge agentRoute={turn.agentRoute} />
+        {!isUser && turn.agentRoute && (
+          <AgentRouteBadge agentRoute={turn.agentRoute} isActive={turn.isStreaming} />
         )}
         {!isUser && <AgentSteps steps={turn.agentSteps} />}
         <div

@@ -101,9 +101,21 @@ def build_multi_agent_graph(
     retrieval_tool, sources_store = make_retrieval_tool(db, service_id, top_k)
 
     graph.add_node("supervisor", _make_supervisor_node(retrieval_mode))
-    graph.add_node("retrieval_agent",  _wrap_agent(make_retrieval_agent(retrieval_tool, system_prompt)))
-    graph.add_node("summary_agent",    _wrap_agent(make_summary_agent(retrieval_tool, system_prompt)))
-    graph.add_node("comparison_agent", _wrap_agent(make_comparison_agent(retrieval_tool, system_prompt)))
+    graph.add_node("retrieval_agent", _wrap_agent(make_retrieval_agent(retrieval_tool, system_prompt)))
+    graph.add_node("summary_agent",   _wrap_agent(make_summary_agent(retrieval_tool, system_prompt)))
+
+    _comparison_graph = make_comparison_agent(retrieval_tool, system_prompt)
+
+    async def comparison_node(state: MultiAgentState) -> dict:
+        result = await _comparison_graph.ainvoke({
+            "messages": state["messages"],
+            "queries": [],
+            "contexts": [],
+        })
+        ai_msgs = [m for m in result["messages"] if isinstance(m, AIMessage)]
+        return {"messages": ai_msgs[-1:] if ai_msgs else []}
+
+    graph.add_node("comparison_agent", comparison_node)
 
     routing = {
         "retrieval":  "retrieval_agent",

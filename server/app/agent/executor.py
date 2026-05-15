@@ -73,7 +73,7 @@ def _token_sse_from_chunk(event: dict) -> list[str]:
 async def _stream_graph(graph, sources_store: dict, input_state: dict, run_config: dict):
     # on_chat_model_stream events inside sub-agents carry langgraph_node="agent"
     # (the inner ReAct node), not the outer node name. Track entry/exit instead.
-    _current_query = ""
+    _pending_queries: dict[str, str] = {}  # run_id → query, supports parallel tool calls
     _in_sub_agent = False
     try:
         async for event in graph.astream_events(input_state, config=run_config, version="v2"):
@@ -99,18 +99,22 @@ async def _stream_graph(graph, sources_store: dict, input_state: dict, run_confi
                 _in_sub_agent = False
 
             elif kind == "on_tool_start" and name == "retrieval":
-                _current_query = (event["data"].get("input") or {}).get("query", "")
-                if _current_query:
-                    logger.debug("[stream] tool_call retrieval query=%r", _current_query)
+                run_id = event.get("run_id", "")
+                query = (event["data"].get("input") or {}).get("query", "")
+                if query:
+                    _pending_queries[run_id] = query
+                    logger.debug("[stream] tool_call retrieval query=%r", query)
                     yield _sse(
                         "agent_step",
                         AgentStepEvent(
-                            type="tool_call", tool="retrieval", input=_current_query
+                            type="tool_call", tool="retrieval", input=query
                         ).model_dump(),
                     )
 
             elif kind == "on_tool_end" and name == "retrieval":
-                sources = sources_store.get(_current_query, [])
+                run_id = event.get("run_id", "")
+                query = _pending_queries.pop(run_id, "")
+                sources = sources_store.get(query, [])
                 logger.debug("[stream] observation retrieval sources=%d", len(sources))
                 yield _sse(
                     "agent_step",
