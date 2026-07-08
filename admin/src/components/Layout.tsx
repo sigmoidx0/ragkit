@@ -1,9 +1,10 @@
-import { useState, type ReactNode } from "react";
+import { useState, useEffect, useRef, type ReactNode } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "@/auth/AuthProvider";
 import { useService } from "@/services/ServiceProvider";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/cn";
+import type { ServiceWithRole } from "@/api/types";
 
 function FileIcon() {
   return (
@@ -104,6 +105,124 @@ function MoonIcon() {
   );
 }
 
+function ChevronDownIcon({ open }: { open: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      className={cn("h-3 w-3 transition-transform", open && "rotate-180")}
+    >
+      <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z" />
+    </svg>
+  );
+}
+
+interface ServiceTheme {
+  icon: string;
+  accent: string;
+  gradientFrom: string;
+  gradientTo: string;
+}
+
+function getServiceTheme(service: { name: string; slug: string }): ServiceTheme {
+  const key = (service.slug + " " + service.name).toLowerCase();
+  if (/legal|법|law/.test(key))
+    return { icon: "⚖️", accent: "#3B82F6", gradientFrom: "#3B82F6", gradientTo: "#6366F1" };
+  if (/medical|의|health|병원|clinic/.test(key))
+    return { icon: "🏥", accent: "#10B981", gradientFrom: "#10B981", gradientTo: "#059669" };
+  if (/finance|금|money|투자|bank/.test(key))
+    return { icon: "💰", accent: "#F59E0B", gradientFrom: "#F59E0B", gradientTo: "#EF4444" };
+  if (/edu|교육|학/.test(key))
+    return { icon: "📚", accent: "#8B5CF6", gradientFrom: "#8B5CF6", gradientTo: "#EC4899" };
+  return { icon: "🤖", accent: "#14B8A6", gradientFrom: "#2DD4BF", gradientTo: "#06B6D4" };
+}
+
+function ServiceSwitcher({
+  services,
+  current,
+  select,
+}: {
+  services: ServiceWithRole[];
+  current: ServiceWithRole | null;
+  select: (s: ServiceWithRole) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const theme = current ? getServiceTheme(current) : null;
+
+  useEffect(() => {
+    function handleOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    if (open) document.addEventListener("mousedown", handleOutside);
+    return () => document.removeEventListener("mousedown", handleOutside);
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative px-4 py-3">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center gap-3 rounded-2xl border border-gray-100 bg-white px-3 py-2.5 shadow-sm transition-shadow hover:shadow-md dark:border-gray-700 dark:bg-gray-700"
+      >
+        <div
+          className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl text-lg"
+          style={{ backgroundColor: theme ? theme.accent + "22" : "#14B8A622" }}
+        >
+          {theme?.icon ?? "🤖"}
+        </div>
+        <div className="flex-1 min-w-0 text-left">
+          <p className="truncate text-xs font-bold text-[#2D3748] dark:text-gray-100">
+            {current?.name ?? "서비스 선택"}
+          </p>
+          {current && (
+            <p className="text-[10px] capitalize text-[#A0AEC0]">{current.role}</p>
+          )}
+        </div>
+        {services.length > 1 && (
+          <span className="text-[#A0AEC0]">
+            <ChevronDownIcon open={open} />
+          </span>
+        )}
+      </button>
+
+      {open && services.length > 1 && (
+        <div className="absolute left-4 right-4 top-full z-50 mt-1 overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-800">
+          {services.map((s) => {
+            const t = getServiceTheme(s);
+            const isSelected = s.id === current?.id;
+            return (
+              <button
+                key={s.id}
+                onClick={() => { select(s); setOpen(false); }}
+                className={cn(
+                  "flex w-full items-center gap-3 px-3 py-2.5 transition-colors",
+                  isSelected
+                    ? "bg-gray-50 dark:bg-gray-700"
+                    : "hover:bg-gray-50 dark:hover:bg-gray-700",
+                )}
+              >
+                <div
+                  className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl text-base"
+                  style={{ backgroundColor: t.accent + "22" }}
+                >
+                  {t.icon}
+                </div>
+                <div className="flex-1 min-w-0 text-left">
+                  <p className="truncate text-xs font-semibold text-[#2D3748] dark:text-gray-100">{s.name}</p>
+                  <p className="text-[10px] capitalize text-[#A0AEC0]">{s.role}</p>
+                </div>
+                {isSelected && (
+                  <span className="h-1.5 w-1.5 rounded-full bg-teal-400" />
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const PAGE_NAMES: Record<string, string> = {
   "/documents": "Documents",
   "/search": "Search",
@@ -168,24 +287,30 @@ function SidebarContent({
   isSuperAdmin,
   isServiceAdmin,
   user,
+  services,
   current,
+  select,
   logout,
   onNavClick,
 }: {
   isSuperAdmin: boolean;
   isServiceAdmin: boolean;
   user: { email: string } | null;
-  current: { role: string; name: string } | null;
+  services: ServiceWithRole[];
+  current: ServiceWithRole | null;
+  select: (s: ServiceWithRole) => void;
   logout: () => void;
   onNavClick?: () => void;
 }) {
+  const theme = current ? getServiceTheme(current) : null;
+
   return (
     <div className="flex h-full flex-col bg-white dark:bg-gray-800">
       {/* Logo */}
       <Link
         to="/"
         onClick={onNavClick}
-        className="flex items-center gap-3 px-6 py-6"
+        className="flex items-center gap-3 px-6 py-5"
       >
         <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-teal-300">
           <svg viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4 text-white">
@@ -195,11 +320,16 @@ function SidebarContent({
         <span className="text-sm font-bold text-[#2D3748] dark:text-gray-100">RAGKIT ADMIN</span>
       </Link>
 
+      {/* Service switcher */}
+      {services.length > 0 && (
+        <ServiceSwitcher services={services} current={current} select={select} />
+      )}
+
       {/* Divider */}
       <div className="mx-6 h-px bg-gray-200 dark:bg-gray-700" />
 
       {/* Nav */}
-      <nav className="flex-1 space-y-1 px-4 py-6">
+      <nav className="flex-1 space-y-1 px-4 py-4">
         <SidebarNavItem to="/chat" icon={<ChatIcon />} label="Chat" onClick={onNavClick} />
         <SidebarNavItem to="/documents" icon={<FileIcon />} label="Documents" onClick={onNavClick} />
         <SidebarNavItem to="/search" icon={<SearchIcon />} label="Search" onClick={onNavClick} />
@@ -230,7 +360,14 @@ function SidebarContent({
 
       {/* User card */}
       <div className="p-4">
-        <div className="rounded-2xl bg-gradient-to-br from-teal-400 to-cyan-600 p-4 text-white shadow-md">
+        <div
+          className="rounded-2xl p-4 text-white shadow-md"
+          style={{
+            background: theme
+              ? `linear-gradient(135deg, ${theme.gradientFrom}, ${theme.gradientTo})`
+              : "linear-gradient(135deg, #2DD4BF, #06B6D4)",
+          }}
+        >
           <p className="truncate text-xs font-semibold">{user?.email}</p>
           {current && (
             <p className="mt-0.5 text-xs capitalize opacity-70">
@@ -266,7 +403,9 @@ export default function Layout() {
     isSuperAdmin,
     isServiceAdmin,
     user,
+    services,
     current,
+    select,
     logout,
   };
 
@@ -327,30 +466,6 @@ export default function Layout() {
             >
               {theme === "light" ? <MoonIcon /> : <SunIcon />}
             </button>
-
-            {services.length > 0 && (
-              <>
-                <select
-                  value={current?.id ?? ""}
-                  onChange={(e) => {
-                    const svc = services.find((s) => s.id === Number(e.target.value));
-                    if (svc) select(svc);
-                  }}
-                  className="rounded-xl border border-gray-200 bg-white px-2 py-2 text-xs font-medium text-[#2D3748] shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:focus:ring-teal-500 md:px-3"
-                >
-                  {services.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
-                {current && (
-                  <span className="hidden rounded-lg bg-teal-50 px-2 py-1 text-xs font-semibold capitalize text-teal-600 dark:bg-teal-900/40 dark:text-teal-300 sm:inline">
-                    {current.role}
-                  </span>
-                )}
-              </>
-            )}
           </div>
         </header>
 
