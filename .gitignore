@@ -13,7 +13,7 @@ dist/
 .vite/
 admin/vite.config.js
 admin/vite.config.d.ts
-admin/tsconfig.tsbuildinfo
+admin/*.tsbuildinfo
 
 # Data / runtime
 data/

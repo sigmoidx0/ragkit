@@ -59,7 +59,7 @@ class _CrossEncoderReranker:
             return []
         pairs = [[query, str(h.payload.get("text", ""))] for h in hits]
         scores: list[float] = self._model.predict(pairs).tolist()
-        ranked = sorted(zip(scores, hits), key=lambda x: x[0], reverse=True)
+        ranked = sorted(zip(scores, hits, strict=True), key=lambda x: x[0], reverse=True)
         return [
             SearchHit(point_id=h.point_id, score=float(s), payload=h.payload)
             for s, h in ranked[:top_k]

@@ -9,7 +9,19 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.agent.checkpoint import checkpointer_lifespan
-from app.api import auth, chat, documents, health, ingest, pipelines, search, services, sessions, system_prompts, users
+from app.api import (
+    auth,
+    chat,
+    documents,
+    health,
+    ingest,
+    pipelines,
+    search,
+    services,
+    sessions,
+    system_prompts,
+    users,
+)
 from app.core.config import get_settings
 from app.core.logging import configure_logging
 from app.db.bootstrap import bootstrap_admin
@@ -24,9 +36,11 @@ logger = logging.getLogger(__name__)
 
 
 def _run_migrations() -> None:
-    from alembic import command
-    from alembic.config import Config
     from pathlib import Path
+
+    from alembic.config import Config
+
+    from alembic import command
     cfg = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
     command.upgrade(cfg, "head")
 

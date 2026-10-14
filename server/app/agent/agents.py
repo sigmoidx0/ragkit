@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from typing import Annotated
 
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool
 from langgraph.graph import END, START, StateGraph
@@ -97,7 +97,7 @@ def make_comparison_agent(retrieval_tool: BaseTool, base_system_prompt: str):
     async def synthesize(state: _ComparisonState) -> dict:
         context_block = "\n\n---\n\n".join(
             f"[Query: {q}]\n{ctx}"
-            for q, ctx in zip(state["queries"], state["contexts"])
+            for q, ctx in zip(state["queries"], state["contexts"], strict=True)
         )
         response = await get_chat_model().ainvoke([
             SystemMessage(content=system_prompt),

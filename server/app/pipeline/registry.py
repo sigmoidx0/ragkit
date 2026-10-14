@@ -5,12 +5,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from app.pipeline.types import NodeDescriptor, NodeExecutor
+    from app.pipeline.types import NodeExecutor
 
-REGISTRY: dict[str, "NodeExecutor"] = {}
+REGISTRY: dict[str, NodeExecutor] = {}
 
 
-def register(executor: "NodeExecutor") -> "NodeExecutor":
+def register(executor: NodeExecutor) -> NodeExecutor:
     REGISTRY[executor.descriptor.node_type] = executor
     return executor
 

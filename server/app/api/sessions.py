@@ -2,20 +2,18 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import StreamingResponse
 from langchain_core.messages import AIMessage, HumanMessage
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from app.agent.checkpoint import get_checkpointer
 from app.agent.executor import session_agent_stream
 from app.api.deps import CurrentUser, DbDep, ServiceMemberDep
 from app.core.config import get_settings
 from app.db.models import ChatSession, ChatTurnSources
-from sqlalchemy import text
-
 from app.schemas.chat import (
     ChatSessionCreate,
     ChatSessionResponse,
@@ -148,7 +146,7 @@ async def session_chat(
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "chat is disabled")
 
     session = _get_session_or_404(db, session_id, user.id, service_id)
-    session.updated_at = datetime.now(timezone.utc)
+    session.updated_at = datetime.now(UTC)
     db.commit()
 
     return StreamingResponse(

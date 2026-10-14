@@ -10,8 +10,8 @@ def test_app_imports() -> None:
     routes = {r.path for r in app.routes}
     assert "/health" in routes
     assert "/auth/login" in routes
-    assert "/search" in routes
-    assert "/documents" in routes
+    assert "/services/{service_id}/search" in routes
+    assert "/services/{service_id}/documents" in routes
 
 
 def test_config_loads() -> None:

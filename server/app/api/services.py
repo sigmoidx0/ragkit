@@ -5,7 +5,14 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import select
 
-from app.api.deps import CurrentUser, DbDep, ServiceAdminDep, ServiceMemberDep, SuperAdminDep, is_superadmin
+from app.api.deps import (
+    CurrentUser,
+    DbDep,
+    ServiceAdminDep,
+    ServiceMemberDep,
+    SuperAdminDep,
+    is_superadmin,
+)
 from app.db.models import Service, ServiceMembership, ServiceRole, User
 from app.schemas.services import (
     ServiceCreate,

@@ -29,7 +29,6 @@ from app.db.models import ServiceMembership, ServiceRole, SuperAdmin, User
 from app.db.session import get_db
 from app.security.tokens import decode_token
 
-
 # ── Public utility ───────────────────────────────────────────────────────────
 
 def is_superadmin(db: Session, user_id: int) -> bool:

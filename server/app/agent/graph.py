@@ -10,11 +10,15 @@ from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.agent.agents import make_comparison_agent, make_direct_agent, make_retrieval_agent, make_summary_agent
+from app.agent.agents import (
+    make_comparison_agent,
+    make_direct_agent,
+    make_retrieval_agent,
+    make_summary_agent,
+)
 from app.agent.state import MultiAgentState
 from app.agent.tools import make_retrieval_tool
 from app.llm import get_chat_model
-from app.schemas.chat import SourceItem
 
 logger = logging.getLogger(__name__)
 

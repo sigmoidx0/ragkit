@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import select
-
 from sqlalchemy.orm import Session
 
 from app.api.deps import DbDep, ServiceAdminDep, ServiceMemberDep

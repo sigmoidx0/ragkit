@@ -5,9 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import AsyncIterator
-
-logger = logging.getLogger(__name__)
+from collections.abc import AsyncIterator
 
 from langchain_core.messages import AIMessage, HumanMessage
 from sqlalchemy import select
@@ -24,6 +22,8 @@ from app.schemas.chat import (
     SupervisorRouteEvent,
     TokenEvent,
 )
+
+logger = logging.getLogger(__name__)
 
 _SUB_AGENT_NODES = {"retrieval_agent", "summary_agent", "comparison_agent", "direct_agent"}
 

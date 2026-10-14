@@ -5,9 +5,10 @@ from __future__ import annotations
 import hashlib
 import re
 import tempfile
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING, BinaryIO, Iterator
+from typing import TYPE_CHECKING, BinaryIO
 
 from app.storage.base import StoredFile
 
