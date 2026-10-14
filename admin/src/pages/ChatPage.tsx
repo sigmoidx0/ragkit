@@ -1,14 +1,17 @@
 import { useRef, useState, useEffect, type KeyboardEvent } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { SessionsApi, SystemPromptsApi } from "@/api/endpoints";
 import { useService } from "@/services/ServiceProvider";
 import { useAuth } from "@/auth/AuthProvider";
 import { Button, Card, Textarea, Badge } from "@/components/ui";
 import { cn } from "@/lib/cn";
-import type { AgentRouteType, AgentStep, ChatRole, ChatSession, ChatTurn, RetrievalMode, SourceItem, SystemPrompt } from "@/api/types";
+import type { AgentCard, AgentRouteType, AgentStep, ChatRole, ChatSession, ChatTurn, GraphTopology, NodeStatus, RetrievalMode, SourceItem, SystemPrompt, TraceSpan } from "@/api/types";
+import { CitedMarkdown } from "@/components/chat/CitedMarkdown";
+import { RunInspector, type RunState } from "@/components/chat/RunInspector";
+import { getAgentTheme } from "@/lib/agentTheme";
+import type { ChatLaunchState } from "@/pages/AgentHomePage";
 
 // ── Icons ────────────────────────────────────────────────────────────────────
 
@@ -311,9 +314,18 @@ function AgentSteps({ steps }: { steps: AgentStep[] }) {
               <div key={i} className="flex gap-2">
                 {step.type === "tool_call" ? (
                   <>
-                    <span className={cn("text-teal-500", isPending && "animate-pulse")}>🔍</span>
+                    <span className={cn(step.delegate ? "text-rose-500" : "text-teal-500", isPending && "animate-pulse")}>
+                      {step.delegate ? "🤝" : "🔍"}
+                    </span>
                     <span className="text-gray-600 dark:text-gray-300">
-                      Searching: <span className="font-mono">{step.input}</span>
+                      {step.delegate ? (
+                        <>
+                          Asking <span className="font-semibold">{step.tool}</span> agent:{" "}
+                        </>
+                      ) : (
+                        "Searching: "
+                      )}
+                      <span className="font-mono">{step.input}</span>
                       {isPending && <span className="ml-1 animate-pulse text-gray-400">…</span>}
                     </span>
                   </>
@@ -321,7 +333,9 @@ function AgentSteps({ steps }: { steps: AgentStep[] }) {
                   <>
                     <span className="text-blue-400">📄</span>
                     <span className="text-gray-500 dark:text-gray-400">
-                      Found {step.output?.length ?? 0} result{(step.output?.length ?? 0) !== 1 ? "s" : ""}
+                      {step.delegate ? `${step.tool} answered from ` : "Found "}
+                      {step.output?.length ?? 0} {step.delegate ? "source" : "result"}
+                      {(step.output?.length ?? 0) !== 1 ? "s" : ""}
                     </span>
                   </>
                 )}
@@ -383,9 +397,7 @@ function MessageBubble({ turn }: { turn: ChatTurn }) {
             <p className="text-red-500">{turn.error}</p>
           ) : (
             <div className="prose prose-sm dark:prose-invert max-w-none">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {turn.content}
-              </ReactMarkdown>
+              <CitedMarkdown content={turn.content} sources={turn.sources} />
             </div>
           )}
         </div>
@@ -635,6 +647,44 @@ function PromptCard({
   );
 }
 
+// ── Welcome (empty chat) ──────────────────────────────────────────────────────
+
+function AgentWelcome({ agent, onAsk }: { agent: AgentCard; onAsk: (q: string) => void }) {
+  const theme = getAgentTheme(agent);
+  const { description, starter_questions } = agent.agent_config;
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-4 px-4 text-center">
+      <span
+        className="flex h-14 w-14 items-center justify-center rounded-2xl text-3xl text-white shadow-md"
+        style={{ background: `linear-gradient(135deg, ${theme.gradientFrom}, ${theme.gradientTo})` }}
+      >
+        {theme.icon}
+      </span>
+      <div>
+        <p className="text-base font-bold text-[#2D3748] dark:text-gray-100">{agent.name}</p>
+        <p className="mt-1 max-w-md text-sm text-gray-500 dark:text-gray-400">
+          {description || "Ask anything about this agent's documents."}
+        </p>
+      </div>
+      {starter_questions.length > 0 && (
+        <div className="flex max-w-xl flex-wrap justify-center gap-2">
+          {starter_questions.map((q) => (
+            <button
+              key={q}
+              onClick={() => onAsk(q)}
+              className="rounded-xl border border-gray-200 px-3 py-1.5 text-xs text-gray-600 transition-colors hover:border-gray-300 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+            >
+              {q}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const EMPTY_RUN: RunState = { topology: null, nodeStatus: {}, delegateStates: {}, spans: [], runStartedAt: null };
+
 // ── Main page ────────────────────────────────────────────────────────────────
 
 export default function ChatPage() {
@@ -649,10 +699,24 @@ export default function ChatPage() {
   const [streaming, setStreaming] = useState(false);
   const [showPrompts, setShowPrompts] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [retrievalMode, setRetrievalMode] = useState<RetrievalMode>("auto");
+  const [retrievalMode, setRetrievalMode] = useState<RetrievalMode>(
+    service?.agent_config.default_retrieval_mode ?? "auto",
+  );
+  // Execution graph for the most recent run: its shape, plus where the run is.
+  const [run, setRun] = useState<RunState>(EMPTY_RUN);
+  const [showGraph, setShowGraph] = useState(true);
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const prevServiceIdRef = useRef<number | null>(null);
+  // A session sendMessage just created: empty on the server, so the
+  // load-messages effect must not reload it over the turns being streamed in.
+  const freshSessionRef = useRef<number | null>(null);
+  // A starter question carried over from the landing page, sent once on arrival.
+  const location = useLocation();
+  const navigate = useNavigate();
+  const launchPromptRef = useRef((location.state as ChatLaunchState | null)?.prompt ?? null);
+  // While that question is being sent, don't auto-open the latest old session.
+  const suppressAutoSelectRef = useRef(launchPromptRef.current != null);
 
   const isAdmin = user?.is_superadmin || false;
 
@@ -703,11 +767,30 @@ export default function ChatPage() {
     prevServiceIdRef.current = service.id;
     setActiveSessionId(null);
     setTurns([]);
+    setRetrievalMode(service.agent_config.default_retrieval_mode);
   }, [service?.id]);
+
+  // Send the landing page's starter question once, in a fresh session.
+  useEffect(() => {
+    const prompt = launchPromptRef.current;
+    if (!prompt || !service) return;
+    launchPromptRef.current = null;
+    navigate(location.pathname, { replace: true, state: null }); // a reload must not resend it
+    void sendMessage(prompt, { newSession: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [service?.id]);
+
+  // Lift the auto-select hold only once the new session is committed. Clearing
+  // it right after creation races the session-list refetch: react-query renders
+  // synchronously, before setActiveSessionId lands, and auto-select would see
+  // "no session" and open the latest old one instead.
+  useEffect(() => {
+    if (activeSessionId != null) suppressAutoSelectRef.current = false;
+  }, [activeSessionId]);
 
   // Auto-select first session once sessions load
   useEffect(() => {
-    if (!sessionsLoaded || activeSessionId != null) return;
+    if (!sessionsLoaded || activeSessionId != null || suppressAutoSelectRef.current) return;
     if (sessions.length > 0) {
       setActiveSessionId(sessions[0].id);
     }
@@ -717,6 +800,11 @@ export default function ChatPage() {
   useEffect(() => {
     if (!service || !activeSessionId) {
       setTurns([]);
+      return;
+    }
+    if (freshSessionRef.current === activeSessionId) {
+      freshSessionRef.current = null;
+      setLoadingMessages(false);
       return;
     }
 
@@ -754,11 +842,31 @@ export default function ChatPage() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [turns]);
 
-  async function sendMessage() {
-    if (!service || !activeSessionId || !input.trim() || streaming) return;
-    const query = input.trim();
-    setInput("");
+  async function sendMessage(text?: string, opts: { newSession?: boolean } = {}) {
+    const query = (text ?? input).trim();
+    if (!service || !query || streaming) return;
+    if (text === undefined) setInput("");
     setStreaming(true);
+
+    // No session yet (first visit, or a starter question): make one rather than
+    // asking the user to click "new chat" before they can type.
+    let sessionId = opts.newSession ? null : activeSessionId;
+    const isNewSession = sessionId == null;
+    if (sessionId == null) {
+      suppressAutoSelectRef.current = true;
+      try {
+        const session = await SessionsApi.create(service.id);
+        freshSessionRef.current = session.id;
+        setActiveSessionId(session.id);
+        qc.invalidateQueries({ queryKey: ["sessions", service.id] });
+        sessionId = session.id;
+      } catch (e) {
+        suppressAutoSelectRef.current = false;
+        toast.error(e instanceof Error ? e.message : "Failed to create session");
+        setStreaming(false);
+        return;
+      }
+    }
 
     const userTurn: ChatTurn = {
       id: crypto.randomUUID(),
@@ -778,7 +886,9 @@ export default function ChatPage() {
       isStreaming: true,
     };
 
-    setTurns((prev) => [...prev, userTurn, assistantTurn]);
+    setTurns((prev) => (isNewSession ? [userTurn, assistantTurn] : [...prev, userTurn, assistantTurn]));
+    // The graph is rebuilt per run, so clear the previous run's trace.
+    setRun(EMPTY_RUN);
 
     const ctrl = new AbortController();
     abortRef.current = ctrl;
@@ -787,34 +897,74 @@ export default function ChatPage() {
       let steps: AgentStep[] = [];
       let sources: SourceItem[] = [];
       let content = "";
+      let topology: GraphTopology | null = null;
+      // Delegate tool name → agent name, for readable step labels.
+      const delegateName = (tool: string) =>
+        topology?.nodes.find((n) => n.id === `delegate:${tool.replace("ask_agent_", "")}`)?.label ?? tool;
 
       for await (const { event, data } of SessionsApi.chat(
         service.id,
-        activeSessionId,
+        sessionId,
         query,
         undefined,
         ctrl.signal,
         retrievalMode,
       )) {
-        if (event === "supervisor_route") {
+        if (event === "graph") {
+          topology = JSON.parse(data) as GraphTopology;
+          const shape = topology;
+          setRun({ ...EMPTY_RUN, topology: shape, runStartedAt: performance.now() });
+        } else if (event === "node_state") {
+          const payload = JSON.parse(data) as { node: string; status: NodeStatus };
+          setRun((r) => ({ ...r, nodeStatus: { ...r.nodeStatus, [payload.node]: payload.status } }));
+        } else if (event === "delegate_state") {
+          const p = JSON.parse(data) as { delegate: string; node: string; status: NodeStatus };
+          setRun((r) => ({
+            ...r,
+            delegateStates: {
+              ...r.delegateStates,
+              [p.delegate]: { ...(r.delegateStates[p.delegate] ?? {}), [p.node]: p.status },
+            },
+          }));
+        } else if (event === "span") {
+          const p = JSON.parse(data) as {
+            id: string; parent_id: string | null; kind: TraceSpan["kind"]; name: string;
+            phase: "start" | "end"; t_ms: number; meta: Record<string, unknown>;
+          };
+          setRun((r) => ({
+            ...r,
+            spans:
+              p.phase === "start"
+                ? [...r.spans, { id: p.id, parent_id: p.parent_id, kind: p.kind, name: p.name, start: p.t_ms, meta: p.meta }]
+                : r.spans.map((sp) => (sp.id === p.id ? { ...sp, end: p.t_ms, meta: { ...sp.meta, ...p.meta } } : sp)),
+          }));
+        } else if (event === "supervisor_route") {
           const payload = JSON.parse(data) as { agent_type: AgentRouteType };
           setTurns((prev) =>
             prev.map((t) => (t.id === assistantId ? { ...t, agentRoute: payload.agent_type } : t)),
           );
         } else if (event === "agent_step") {
           const payload = JSON.parse(data) as { type: string; tool: string; input?: string; output?: SourceItem[] };
+          const isDelegate = payload.tool.startsWith("ask_agent_");
           const step: AgentStep = {
             type: payload.type as "tool_call" | "observation",
-            tool: payload.tool,
+            tool: isDelegate ? delegateName(payload.tool) : payload.tool,
+            delegate: isDelegate,
             input: payload.input,
             output: payload.output,
           };
           steps = [...steps, step];
-          if (payload.type === "observation" && payload.output) {
+          // A delegate's sources are numbered in its own answer, not ours, so
+          // they stay in its step instead of joining this answer's citations.
+          if (payload.type === "observation" && payload.output && !isDelegate) {
             sources = [...sources, ...payload.output];
           }
+          // Text streamed before a tool call is the model narrating its plan
+          // ("let me search…") — or a tool call it printed as text. The answer
+          // starts after the last tool call, so drop it.
+          if (payload.type === "tool_call") content = "";
           setTurns((prev) =>
-            prev.map((t) => (t.id === assistantId ? { ...t, agentSteps: steps } : t)),
+            prev.map((t) => (t.id === assistantId ? { ...t, agentSteps: steps, content, sources } : t)),
           );
         } else if (event === "token") {
           const payload = JSON.parse(data) as { delta: string };
@@ -913,14 +1063,21 @@ export default function ChatPage() {
       {/* Chat area */}
       <div className="flex flex-1 flex-col min-w-0">
         {/* Header */}
-        <div className="mb-3 flex items-center justify-between">
-          <div className="flex items-center gap-2">
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
             <button
               className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700 md:hidden"
               onClick={() => setSidebarOpen(true)}
             >
               <MenuIcon />
             </button>
+            {service && (
+              <span className="flex items-center gap-1.5 text-sm font-semibold text-[#2D3748] dark:text-gray-100">
+                <span>{getAgentTheme(service).icon}</span>
+                {service.name}
+              </span>
+            )}
+            {service && <Badge tone="slate">{service.model_label}</Badge>}
             {activePrompt ? (
               <Badge tone="green">{activePrompt.name}</Badge>
             ) : (
@@ -928,6 +1085,14 @@ export default function ChatPage() {
             )}
           </div>
           <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant={showGraph ? "primary" : "secondary"}
+              onClick={() => setShowGraph((p) => !p)}
+              className="hidden items-center gap-1.5 lg:flex"
+            >
+              Graph
+            </Button>
             <Button
               size="sm"
               variant="secondary"
@@ -945,7 +1110,7 @@ export default function ChatPage() {
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
             {!service ? (
               <div className="flex h-full items-center justify-center text-sm text-gray-400">
-                Select a service to start chatting.
+                Select an agent to start chatting.
               </div>
             ) : loadingMessages ? (
               <div className="flex h-full items-center justify-center">
@@ -955,17 +1120,8 @@ export default function ChatPage() {
                   <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-300" />
                 </span>
               </div>
-            ) : !activeSessionId ? (
-              <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-gray-400">
-                <p>No session selected.</p>
-                <Button size="sm" onClick={() => createSession.mutate()} disabled={createSession.isPending}>
-                  Start new chat
-                </Button>
-              </div>
             ) : turns.length === 0 ? (
-              <div className="flex h-full items-center justify-center text-sm text-gray-400">
-                Ask anything about your documents.
-              </div>
+              <AgentWelcome agent={service} onAsk={(q) => void sendMessage(q)} />
             ) : (
               turns.map((turn) => <MessageBubble key={turn.id} turn={turn} />)
             )}
@@ -997,15 +1153,13 @@ export default function ChatPage() {
                 className="resize-none text-sm"
                 placeholder={
                   !service
-                    ? "Select a service first"
-                    : !activeSessionId
-                      ? "Create a session to start"
-                      : "Ask a question… (Enter to send, Shift+Enter for newline)"
+                    ? "Select an agent first"
+                    : `Ask ${service.name}… (Enter to send, Shift+Enter for newline)`
                 }
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                disabled={!service || !activeSessionId || streaming}
+                disabled={!service || streaming}
               />
               {streaming ? (
                 <Button variant="danger" onClick={stopStream} className="self-end">
@@ -1013,8 +1167,8 @@ export default function ChatPage() {
                 </Button>
               ) : (
                 <Button
-                  onClick={sendMessage}
-                  disabled={!service || !activeSessionId || !input.trim()}
+                  onClick={() => void sendMessage()}
+                  disabled={!service || !input.trim()}
                   className="self-end flex items-center gap-1.5"
                 >
                   <SendIcon />
@@ -1025,6 +1179,15 @@ export default function ChatPage() {
           </div>
         </Card>
       </div>
+
+      {/* Execution graph panel — hidden on small screens, where width is scarce */}
+      {showGraph && !showPrompts && (
+        <div className="hidden lg:block lg:w-[360px] lg:shrink-0 xl:w-[440px] 2xl:w-[520px]">
+          <Card className="flex h-full flex-col overflow-hidden rounded-2xl p-0">
+            <RunInspector run={run} streaming={streaming} onHide={() => setShowGraph(false)} />
+          </Card>
+        </div>
+      )}
 
       {/* System prompts panel */}
       {showPrompts && service && (

@@ -7,30 +7,32 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { ServicesApi } from "@/api/endpoints";
-import type { ServiceWithRole } from "@/api/types";
+import { AgentsApi } from "@/api/endpoints";
+import type { AgentCard } from "@/api/types";
 
 const STORAGE_KEY = "ragkit.service_id";
 
 interface ServiceContextValue {
-  services: ServiceWithRole[];
-  current: ServiceWithRole | null;
+  services: AgentCard[];
+  current: AgentCard | null;
   loading: boolean;
-  select: (service: ServiceWithRole) => void;
+  select: (service: AgentCard) => void;
   refresh: () => Promise<void>;
 }
 
 const ServiceContext = createContext<ServiceContextValue | null>(null);
 
 export function ServiceProvider({ children }: { children: ReactNode }) {
-  const [services, setServices] = useState<ServiceWithRole[]>([]);
-  const [current, setCurrent] = useState<ServiceWithRole | null>(null);
+  const [services, setServices] = useState<AgentCard[]>([]);
+  const [current, setCurrent] = useState<AgentCard | null>(null);
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const list = await ServicesApi.listMine();
+      // Agent cards are a superset of the plain service list, so every page that
+      // only needs id/name/role keeps working.
+      const list = await AgentsApi.listMine();
       setServices(list);
 
       const savedId = localStorage.getItem(STORAGE_KEY);
@@ -48,7 +50,7 @@ export function ServiceProvider({ children }: { children: ReactNode }) {
     void refresh();
   }, [refresh]);
 
-  const select = useCallback((service: ServiceWithRole) => {
+  const select = useCallback((service: AgentCard) => {
     setCurrent(service);
     localStorage.setItem(STORAGE_KEY, String(service.id));
   }, []);

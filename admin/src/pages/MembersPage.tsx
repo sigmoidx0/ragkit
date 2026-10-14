@@ -111,7 +111,7 @@ export default function MembersPage() {
     },
   ];
 
-  if (!service) return <div className="text-[#A0AEC0]">No service selected.</div>;
+  if (!service) return <div className="text-[#A0AEC0]">No agent selected.</div>;
 
   const confirmRemoveEmail =
     confirmRemove != null
@@ -130,7 +130,7 @@ export default function MembersPage() {
         }}
         onCancel={() => setConfirmRemove(null)}
       >
-        Remove <strong>{confirmRemoveEmail}</strong> from this service?
+        Remove <strong>{confirmRemoveEmail}</strong> from this agent?
       </ConfirmDialog>
       <Card className="p-5">
         <SectionHeading className="mb-3">Add Member — {service.name}</SectionHeading>

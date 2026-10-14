@@ -100,7 +100,7 @@ export default function DocumentsPage() {
   const onUpload = async (e: FormEvent) => {
     e.preventDefault();
     if (!service) {
-      toast.error("No service selected");
+      toast.error("No agent selected");
       return;
     }
     if (!file) {
@@ -138,7 +138,7 @@ export default function DocumentsPage() {
   };
 
   if (!service) {
-    return <div className="text-[#A0AEC0]">No service available.</div>;
+    return <div className="text-[#A0AEC0]">No agent available.</div>;
   }
 
   return (

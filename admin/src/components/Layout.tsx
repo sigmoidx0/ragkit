@@ -4,7 +4,8 @@ import { useAuth } from "@/auth/AuthProvider";
 import { useService } from "@/services/ServiceProvider";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/cn";
-import type { ServiceWithRole } from "@/api/types";
+import { getAgentTheme } from "@/lib/agentTheme";
+import type { AgentCard } from "@/api/types";
 
 function FileIcon() {
   return (
@@ -97,6 +98,22 @@ function SunIcon() {
   );
 }
 
+function GridIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4">
+      <path d="M3 3h8v8H3V3zm10 0h8v8h-8V3zM3 13h8v8H3v-8zm10 0h8v8h-8v-8z" />
+    </svg>
+  );
+}
+
+function SlidersIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4">
+      <path d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z" />
+    </svg>
+  );
+}
+
 function MoonIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4">
@@ -117,38 +134,18 @@ function ChevronDownIcon({ open }: { open: boolean }) {
   );
 }
 
-interface ServiceTheme {
-  icon: string;
-  accent: string;
-  gradientFrom: string;
-  gradientTo: string;
-}
-
-function getServiceTheme(service: { name: string; slug: string }): ServiceTheme {
-  const key = (service.slug + " " + service.name).toLowerCase();
-  if (/legal|법|law/.test(key))
-    return { icon: "⚖️", accent: "#3B82F6", gradientFrom: "#3B82F6", gradientTo: "#6366F1" };
-  if (/medical|의|health|병원|clinic/.test(key))
-    return { icon: "🏥", accent: "#10B981", gradientFrom: "#10B981", gradientTo: "#059669" };
-  if (/finance|금|money|투자|bank/.test(key))
-    return { icon: "💰", accent: "#F59E0B", gradientFrom: "#F59E0B", gradientTo: "#EF4444" };
-  if (/edu|교육|학/.test(key))
-    return { icon: "📚", accent: "#8B5CF6", gradientFrom: "#8B5CF6", gradientTo: "#EC4899" };
-  return { icon: "🤖", accent: "#14B8A6", gradientFrom: "#2DD4BF", gradientTo: "#06B6D4" };
-}
-
 function ServiceSwitcher({
   services,
   current,
   select,
 }: {
-  services: ServiceWithRole[];
-  current: ServiceWithRole | null;
-  select: (s: ServiceWithRole) => void;
+  services: AgentCard[];
+  current: AgentCard | null;
+  select: (s: AgentCard) => void;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  const theme = current ? getServiceTheme(current) : null;
+  const theme = current ? getAgentTheme(current) : null;
 
   useEffect(() => {
     function handleOutside(e: MouseEvent) {
@@ -188,7 +185,7 @@ function ServiceSwitcher({
       {open && services.length > 1 && (
         <div className="absolute left-4 right-4 top-full z-50 mt-1 overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-800">
           {services.map((s) => {
-            const t = getServiceTheme(s);
+            const t = getAgentTheme(s);
             const isSelected = s.id === current?.id;
             return (
               <button
@@ -224,6 +221,8 @@ function ServiceSwitcher({
 }
 
 const PAGE_NAMES: Record<string, string> = {
+  "/": "Agents",
+  "/agent-settings": "Agent Settings",
   "/documents": "Documents",
   "/search": "Search",
   "/chat": "Chat",
@@ -231,7 +230,7 @@ const PAGE_NAMES: Record<string, string> = {
   "/pipeline": "Pipeline Builder",
   "/members": "Members",
   "/users": "Users",
-  "/services": "Services",
+  "/services": "Manage Agents",
 };
 
 function SidebarNavItem({
@@ -239,14 +238,17 @@ function SidebarNavItem({
   icon,
   label,
   onClick,
+  end,
 }: {
   to: string;
   icon: ReactNode;
   label: string;
   onClick?: () => void;
+  /** Match the path exactly — needed for "/", which every route starts with. */
+  end?: boolean;
 }) {
   return (
-    <NavLink to={to} onClick={onClick}>
+    <NavLink to={to} end={end} onClick={onClick}>
       {({ isActive }) => (
         <div
           className={cn(
@@ -296,13 +298,13 @@ function SidebarContent({
   isSuperAdmin: boolean;
   isServiceAdmin: boolean;
   user: { email: string } | null;
-  services: ServiceWithRole[];
-  current: ServiceWithRole | null;
-  select: (s: ServiceWithRole) => void;
+  services: AgentCard[];
+  current: AgentCard | null;
+  select: (s: AgentCard) => void;
   logout: () => void;
   onNavClick?: () => void;
 }) {
-  const theme = current ? getServiceTheme(current) : null;
+  const theme = current ? getAgentTheme(current) : null;
 
   return (
     <div className="flex h-full flex-col bg-white dark:bg-gray-800">
@@ -330,6 +332,7 @@ function SidebarContent({
 
       {/* Nav */}
       <nav className="flex-1 space-y-1 px-4 py-4">
+        <SidebarNavItem to="/" end icon={<GridIcon />} label="Agents" onClick={onNavClick} />
         <SidebarNavItem to="/chat" icon={<ChatIcon />} label="Chat" onClick={onNavClick} />
         <SidebarNavItem to="/documents" icon={<FileIcon />} label="Documents" onClick={onNavClick} />
         <SidebarNavItem to="/search" icon={<SearchIcon />} label="Search" onClick={onNavClick} />
@@ -346,13 +349,16 @@ function SidebarContent({
               </span>
             </div>
             {isServiceAdmin && (
+              <SidebarNavItem to="/agent-settings" icon={<SlidersIcon />} label="Agent Settings" onClick={onNavClick} />
+            )}
+            {isServiceAdmin && (
               <SidebarNavItem to="/members" icon={<PeopleIcon />} label="Members" onClick={onNavClick} />
             )}
             {isSuperAdmin && (
               <SidebarNavItem to="/users" icon={<PersonIcon />} label="Users" onClick={onNavClick} />
             )}
             {isSuperAdmin && (
-              <SidebarNavItem to="/services" icon={<GearIcon />} label="Services" onClick={onNavClick} />
+              <SidebarNavItem to="/services" icon={<GearIcon />} label="Manage Agents" onClick={onNavClick} />
             )}
           </>
         )}

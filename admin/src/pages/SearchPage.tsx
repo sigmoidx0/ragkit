@@ -37,7 +37,7 @@ export default function SearchPage() {
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
     if (!service) {
-      toast.error("No service selected");
+      toast.error("No agent selected");
       return;
     }
     setResult(null);

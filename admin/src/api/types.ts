@@ -87,6 +87,50 @@ export interface ServiceWithRole extends Service {
   role: ServiceRole;
 }
 
+// ── Agent configuration (a Service is presented as an Agent) ──────────────────
+
+export type LlmProvider = "openai" | "anthropic" | "google" | "ollama" | "vllm";
+export type AgentRouteName = "retrieval" | "summary" | "comparison" | "direct";
+export type AgentAccent = "teal" | "blue" | "purple" | "amber" | "rose" | "slate";
+
+export interface AgentRouteConfig {
+  enabled: boolean;
+  description: string;
+}
+
+export interface AgentConfig {
+  description: string;
+  /** null keeps the name-based theme. */
+  icon: string | null;
+  accent: AgentAccent | null;
+  starter_questions: string[];
+  /** Each null field inherits config.yaml. */
+  llm: { provider: LlmProvider | null; model: string | null; temperature: number | null };
+  /** null = built-in search chain. */
+  pipeline_id: number | null;
+  top_k: number | null;
+  max_iterations: number | null;
+  default_retrieval_mode: RetrievalMode;
+  /** Other agents this one may consult as tools. */
+  delegates: number[];
+  routes: Record<AgentRouteName, AgentRouteConfig>;
+}
+
+/** One agent as the landing page and the rest of the app see it. */
+export interface AgentCard extends ServiceWithRole {
+  agent_config: AgentConfig;
+  document_count: number;
+  /** Resolved "provider · model" after config.yaml defaults apply. */
+  model_label: string;
+}
+
+export interface ProviderInfo {
+  provider: LlmProvider;
+  available: boolean;
+  reason: string | null;
+  models: string[];
+}
+
 export interface ServiceMember {
   user_id: number;
   service_id: number;
@@ -267,13 +311,54 @@ export interface SourceItem {
 
 export interface AgentStep {
   type: "tool_call" | "observation";
+  /** Tool name, or the agent's name when `delegate` is set. */
   tool: string;
+  /** A call to another agent (agent-as-tool) rather than a document search. */
+  delegate?: boolean;
   input?: string;
   output?: SourceItem[];
 }
 
 export type AgentRouteType = "retrieval" | "summary" | "comparison";
 export type RetrievalMode = "on" | "off" | "auto";
+
+/** Shape of the agent graph for one run, sent by the server before it executes. */
+export interface GraphNode {
+  id: string;
+  label: string;
+  kind: "entry" | "exit" | "supervisor" | "agent" | "delegate";
+}
+
+export interface GraphEdge {
+  source: string;
+  target: string;
+  label?: string | null;
+  conditional?: boolean;
+  /** The source may call the target (a delegate agent) as a tool. */
+  tool?: boolean;
+}
+
+export interface GraphTopology {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+}
+
+export type NodeStatus = "running" | "done";
+
+/** One timed unit of a run — a graph node, LLM call or tool call. */
+export interface TraceSpan {
+  id: string;
+  parent_id: string | null;
+  kind: "node" | "llm" | "tool";
+  name: string;
+  /** ms since the run started */
+  start: number;
+  end?: number;
+  meta: Record<string, unknown>;
+}
+
+/** Progress inside a delegate agent: its node id → (inner node → status). */
+export type DelegateStates = Record<string, Record<string, NodeStatus>>;
 
 export interface ChatTurn {
   id: string;

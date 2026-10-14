@@ -28,9 +28,9 @@ export default function ServicesPage() {
       await refreshServiceContext();
       setName("");
       setSlug("");
-      toast.success("Service created");
+      toast.success("Agent created");
     },
-    onError: (err) => toast.error(err instanceof Error ? err.message : "Failed to create service"),
+    onError: (err) => toast.error(err instanceof Error ? err.message : "Failed to create agent"),
   });
 
   const deleteMutation = useMutation({
@@ -38,9 +38,9 @@ export default function ServicesPage() {
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ["services-all"] });
       await refreshServiceContext();
-      toast.success("Service deleted");
+      toast.success("Agent deleted");
     },
-    onError: (err) => toast.error(err instanceof Error ? err.message : "Failed to delete service"),
+    onError: (err) => toast.error(err instanceof Error ? err.message : "Failed to delete agent"),
   });
 
   const onSubmit = (e: FormEvent) => {
@@ -78,7 +78,7 @@ export default function ServicesPage() {
     <div className="space-y-6">
       <ConfirmDialog
         open={confirmDelete != null}
-        title="Delete service?"
+        title="Delete agent?"
         confirmLabel="Delete"
         onConfirm={() => {
           if (confirmDelete) deleteMutation.mutate(confirmDelete.id);
@@ -89,14 +89,14 @@ export default function ServicesPage() {
         Delete <strong>{confirmDelete?.name}</strong>? This cannot be undone.
       </ConfirmDialog>
       <Card className="p-5">
-        <SectionHeading className="mb-3">New Service</SectionHeading>
+        <SectionHeading className="mb-3">New Agent</SectionHeading>
         <form onSubmit={onSubmit} className="grid gap-4 md:grid-cols-2">
           <FormField label="Name" htmlFor="svc-name">
             <Input
               id="svc-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="My Service"
+              placeholder="My Agent"
               required
             />
           </FormField>
@@ -105,7 +105,7 @@ export default function ServicesPage() {
               id="svc-slug"
               value={slug}
               onChange={(e) => setSlug(e.target.value)}
-              placeholder="my-service"
+              placeholder="my-agent"
               required
             />
           </FormField>
@@ -123,7 +123,7 @@ export default function ServicesPage() {
           rows={services}
           rowKey={(s) => s.id}
           isLoading={listQuery.isLoading}
-          emptyMessage="No services yet."
+          emptyMessage="No agents yet."
         />
       </Card>
     </div>

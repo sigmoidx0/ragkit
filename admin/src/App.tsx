@@ -13,6 +13,8 @@ import UsersPage from "./pages/UsersPage";
 import PlaygroundPage from "./pages/PlaygroundPage";
 import PipelineBuilderPage from "./pages/PipelineBuilderPage";
 import ChatPage from "./pages/ChatPage";
+import AgentHomePage from "./pages/AgentHomePage";
+import AgentSettingsPage from "./pages/AgentSettingsPage";
 
 export default function App() {
   return (
@@ -29,7 +31,7 @@ export default function App() {
           </RequireAuth>
         }
       >
-        <Route index element={<Navigate to="/chat" replace />} />
+        <Route index element={<AgentHomePage />} />
         <Route path="/documents" element={<DocumentsPage />} />
         <Route path="/documents/:id" element={<DocumentDetailPage />} />
         <Route path="/search" element={<SearchPage />} />
@@ -39,6 +41,7 @@ export default function App() {
         <Route path="/playground" element={<RequireServiceAdmin><PlaygroundPage /></RequireServiceAdmin>} />
         <Route path="/pipeline" element={<PipelineBuilderPage />} />
         <Route path="/chat" element={<ChatPage />} />
+        <Route path="/agent-settings" element={<RequireServiceAdmin><AgentSettingsPage /></RequireServiceAdmin>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

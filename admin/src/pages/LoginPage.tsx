@@ -46,7 +46,7 @@ export default function LoginPage() {
             <p className="mt-2 text-sm font-medium opacity-80">Admin Dashboard</p>
           </div>
           <p className="max-w-xs text-center text-sm leading-relaxed opacity-70">
-            Manage your documents, services, and team members from a single place.
+            Build, tune and chat with RAG agents over your own documents.
           </p>
         </div>
       </div>

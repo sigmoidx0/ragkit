@@ -181,7 +181,7 @@ export default function PipelineBuilderPage() {
   // Save mutation
   const saveMutation = useMutation({
     mutationFn: async () => {
-      if (!service) throw new Error("No service selected");
+      if (!service) throw new Error("No agent selected");
       const graph = flowToGraph(nodes, edges);
       if (activePipelineId != null) {
         return PipelineApi.update(service.id, activePipelineId, { name: pipelineName, graph_json: graph });

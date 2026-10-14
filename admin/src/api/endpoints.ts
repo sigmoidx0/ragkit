@@ -1,5 +1,9 @@
 import { apiFetch, apiFetchBlob, apiSSE } from "./client";
 import type {
+  AgentCard,
+  AgentConfig,
+  GraphTopology,
+  ProviderInfo,
   ChatMessage,
   ChatSession,
   RetrievalMode,
@@ -91,6 +95,18 @@ export const SearchApi = {
     apiFetch<SearchResponse>(`/services/${serviceId}/search`, { body: payload }),
 };
 
+export const AgentsApi = {
+  listMine: () => apiFetch<AgentCard[]>("/me/agents"),
+  getConfig: (serviceId: number) => apiFetch<AgentConfig>(`/services/${serviceId}/agent-config`),
+  updateConfig: (serviceId: number, config: AgentConfig) =>
+    apiFetch<AgentConfig>(`/services/${serviceId}/agent-config`, { method: "PUT", body: config }),
+  previewGraph: (serviceId: number, config: AgentConfig, retrievalMode?: RetrievalMode) =>
+    apiFetch<GraphTopology>(`/services/${serviceId}/agent-graph/preview`, {
+      body: { config, retrieval_mode: retrievalMode ?? null },
+    }),
+  providers: () => apiFetch<ProviderInfo[]>("/llm/providers"),
+};
+
 export const PipelineApi = {
   schema: () => apiFetch<PipelineSchema>("/pipeline-schema"),
   nodeModels: () => apiFetch<NodeModels>("/pipeline-node-models"),
@@ -143,5 +159,5 @@ export const SessionsApi = {
   remove: (serviceId: number, sessionId: number) =>
     apiFetch<void>(`/services/${serviceId}/sessions/${sessionId}`, { method: "DELETE" }),
   chat: (serviceId: number, sessionId: number, message: string, topK?: number, signal?: AbortSignal, retrievalMode?: RetrievalMode) =>
-    apiSSE(`/services/${serviceId}/sessions/${sessionId}/chat`, { message, top_k: topK, retrieval_mode: retrievalMode ?? "on" }, signal),
+    apiSSE(`/services/${serviceId}/sessions/${sessionId}/chat`, { message, top_k: topK, retrieval_mode: retrievalMode ?? null }, signal),
 };
