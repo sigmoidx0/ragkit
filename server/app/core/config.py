@@ -115,19 +115,29 @@ class LlmVllmCfg(BaseModel):
     base_url: str = ""
 
 
+class LlmGoogleCfg(BaseModel):
+    # Gemini's OpenAI-compatible endpoint, so the openai client can be reused.
+    base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai/"
+
+
+LlmProvider = Literal["openai", "anthropic", "google", "ollama", "vllm"]
+
+
 class LlmSection(BaseModel):
-    provider: Literal["openai", "anthropic", "ollama", "vllm"] = "ollama"
+    provider: LlmProvider = "ollama"
     model: str = "qwen2.5:1.5b"
     api_key: str | None = None
     temperature: float = 0.0
     max_tokens: int = 2048
     ollama: LlmOllamaCfg = Field(default_factory=LlmOllamaCfg)
     vllm: LlmVllmCfg = Field(default_factory=LlmVllmCfg)
+    google: LlmGoogleCfg = Field(default_factory=LlmGoogleCfg)
 
 
 class AgentSection(BaseModel):
-    max_iterations: int = 5  # legacy ReAct recursion limit, kept for config compat
-    max_retries: int = 2     # grader re-retrieval attempts before falling through
+    # Hard ceiling on tool-call rounds per sub-agent. Caps cost and stops a model
+    # that keeps retrieving instead of answering.
+    max_iterations: int = 5
 
 
 class ChatSection(BaseModel):
@@ -232,6 +242,25 @@ def _apply_env_overrides(raw: dict[str, Any]) -> dict[str, Any]:
     llm_key = os.getenv("LLM_API_KEY")
     if llm_key:
         raw.setdefault("llm", {})["api_key"] = llm_key
+
+    # Service addresses, so one config.yaml works on a laptop (localhost) and in
+    # a container stack (service names like http://qdrant:6333).
+    vs_url = os.getenv("VECTORSTORE_URL")
+    if vs_url:
+        raw.setdefault("vectorstore", {})["url"] = vs_url
+    ollama_url = os.getenv("OLLAMA_BASE_URL")
+    if ollama_url:
+        # Embeddings and chat share one Ollama server in every setup we ship.
+        raw.setdefault("embeddings", {}).setdefault("ollama", {})["base_url"] = ollama_url
+        raw.setdefault("llm", {}).setdefault("ollama", {})["base_url"] = ollama_url
+    # Default chat model, so a cloud deployment can start on a hosted provider
+    # without editing config.yaml. Individual agents can still override it.
+    llm_provider = os.getenv("LLM_PROVIDER")
+    if llm_provider:
+        raw.setdefault("llm", {})["provider"] = llm_provider
+    llm_model = os.getenv("LLM_MODEL")
+    if llm_model:
+        raw.setdefault("llm", {})["model"] = llm_model
 
     return raw
 
