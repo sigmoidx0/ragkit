@@ -9,9 +9,11 @@ from sqlalchemy import (
     JSON,
     BigInteger,
     Boolean,
+    CheckConstraint,
     Enum,
     ForeignKey,
     Integer,
+    SmallInteger,
     String,
     Text,
     UniqueConstraint,
@@ -146,3 +148,54 @@ class Pipeline(TimestampMixin, Base):
         server_default=PipelineStatus.draft.value,
     )
 
+
+class EvalRun(TimestampMixin, Base):
+    """One evaluation: a question set run against a snapshot of an agent's config.
+
+    The config is snapshotted so a run stays interpretable after the agent's
+    settings change — which is the point when comparing two runs.
+    """
+
+    __tablename__ = "eval_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    service_id: Mapped[int] = mapped_column(Integer, ForeignKey("services.id", ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")  # pending|running|done|failed
+    config_snapshot: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    cases: Mapped[list[Any]] = mapped_column(JSON, nullable=False)
+    # One entry per case, appended as each finishes so the UI can show progress.
+    results: Mapped[list[Any]] = mapped_column(JSON, nullable=False, default=list)
+    summary: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # The system prompt the run used, copied in at creation so a later edit or
+    # activation of another prompt can't change what a past run measured.
+    prompt_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    system_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class MessageFeedback(TimestampMixin, Base):
+    """A user's 👍/👎 on one assistant answer.
+
+    The question and answer are copied from the chat history when the rating
+    is saved, so feedback stays readable — and importable into an evaluation —
+    even after the session is deleted or the history format changes.
+    """
+
+    __tablename__ = "message_feedback"
+    __table_args__ = (
+        UniqueConstraint("session_id", "turn_index", name="uq_feedback_turn"),
+        CheckConstraint("rating IN (-1, 1)", name="ck_feedback_rating"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    service_id: Mapped[int] = mapped_column(Integer, ForeignKey("services.id", ondelete="CASCADE"), nullable=False, index=True)
+    session_id: Mapped[int] = mapped_column(Integer, ForeignKey("chat_sessions.id", ondelete="CASCADE"), nullable=False)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    # Which assistant answer in the session, counting from 0 — the same index
+    # ChatTurnSources uses.
+    turn_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    rating: Mapped[int] = mapped_column(SmallInteger, nullable=False)  # +1 or -1
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    question: Mapped[str] = mapped_column(Text, nullable=False)
+    answer: Mapped[str] = mapped_column(Text, nullable=False)

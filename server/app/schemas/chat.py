@@ -113,12 +113,23 @@ class ChatSessionResponse(BaseModel):
     updated_at: datetime
 
 
+class FeedbackIn(BaseModel):
+    rating: Literal[1, -1]
+    comment: str | None = Field(default=None, max_length=1000)
+
+
+class FeedbackOut(BaseModel):
+    rating: Literal[1, -1]
+    comment: str | None = None
+
+
 class SessionMessageResponse(BaseModel):
     role: str
     content: str
     sources: list[SourceItem] = Field(default_factory=list)
-    # Assistant messages only: which answer in the session this is.
+    # Assistant messages only: which answer this is, and how the user rated it.
     turn_index: int | None = None
+    feedback: FeedbackOut | None = None
 
 
 class SessionChatRequest(BaseModel):

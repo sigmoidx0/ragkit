@@ -14,6 +14,8 @@ from app.api import (
     auth,
     chat,
     documents,
+    evals,
+    feedback,
     health,
     ingest,
     pipelines,
@@ -36,6 +38,9 @@ configure_logging()
 logger = logging.getLogger(__name__)
 
 
+from app.eval.runner import fail_interrupted_runs  # noqa: E402
+
+
 def _run_migrations() -> None:
     from pathlib import Path
 
@@ -53,6 +58,7 @@ async def lifespan(_app: FastAPI):
     configure_logging()  # re-apply after alembic's fileConfig() overrides root logger
     with SessionLocal() as db:
         bootstrap_admin(db)
+    fail_interrupted_runs()
     try:
         get_vectorstore().ensure_collection()
     except Exception:
@@ -75,6 +81,8 @@ def create_app() -> FastAPI:
     app.include_router(auth.router)
     app.include_router(services.router)
     app.include_router(agent_config.router)
+    app.include_router(evals.router)
+    app.include_router(feedback.router)
     app.include_router(documents.router)
     app.include_router(ingest.router)
     app.include_router(search.router)
