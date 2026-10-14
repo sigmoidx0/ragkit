@@ -27,3 +27,19 @@ def test_create_tables_runs() -> None:
 
     create_tables()
     create_tables()
+
+
+def test_timestamps_come_back_in_utc() -> None:
+    """SQLite returns naive datetimes; they must still serialize with an offset."""
+    from app.db.models import Service
+    from app.db.session import SessionLocal, create_tables
+
+    create_tables()
+    with SessionLocal() as db:
+        svc = Service(name="tz-check", slug="tz-check")
+        db.add(svc)
+        db.commit()
+        db.expire_all()
+        loaded = db.get(Service, svc.id)
+        assert loaded.created_at.tzinfo is not None
+        assert loaded.created_at.utcoffset().total_seconds() == 0
