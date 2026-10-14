@@ -1,0 +1,98 @@
+# Full ragkit stack: web UI, API server, Postgres, Qdrant — and optionally Ollama.
+#
+#   cp deploy/.env.example deploy/.env       # set JWT_SECRET_KEY etc.
+#   docker compose -f deploy/docker-compose.yml up -d --build
+#   open http://localhost:8080
+#
+# LLM options (pick one in deploy/.env):
+#   - Ollama in this stack:   add `--profile ollama`; models are pulled on first start
+#   - Ollama on the host:     OLLAMA_BASE_URL=http://host.docker.internal:11434
+#   - Hosted provider:        LLM_PROVIDER=google LLM_MODEL=gemini-3.5-flash GOOGLE_API_KEY=...
+#
+# This stack has its own project name and volumes, so it never touches the
+# SQLite + Qdrant data of the local development setup (../docker-compose.yml).
+name: ragkit-stack
+
+x-server-env: &server-env
+  DATABASE_URL: postgresql+psycopg://ragkit:${POSTGRES_PASSWORD:-ragkit}@postgres:5432/ragkit
+  VECTORSTORE_URL: http://qdrant:6333
+  OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
+
+services:
+  web:
+    build: ../admin
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    depends_on:
+      server:
+        condition: service_healthy
+    restart: unless-stopped
+
+  server:
+    build: ../server
+    env_file:
+      - path: .env
+        required: false
+    environment: *server-env
+    volumes:
+      - server_data:/app/data
+      - model_cache:/models
+    extra_hosts:
+      # Lets OLLAMA_BASE_URL point at an Ollama running on the host.
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ragkit
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ragkit}
+      POSTGRES_DB: ragkit
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ragkit"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:v1.12.4
+    volumes:
+      - qdrant_data:/qdrant/storage
+    restart: unless-stopped
+
+  # ── Optional: run the models inside the stack (on-premise, no external API) ──
+  ollama:
+    profiles: [ollama]
+    image: ollama/ollama:0.21.0
+    volumes:
+      - ollama_models:/root/.ollama
+    restart: unless-stopped
+
+  ollama-pull:
+    profiles: [ollama]
+    image: ollama/ollama:0.21.0
+    depends_on: [ollama]
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        until ollama list >/dev/null 2>&1; do sleep 1; done;
+        ollama pull nomic-embed-text &&
+        ollama pull ${OLLAMA_CHAT_MODEL:-qwen2.5:14b}
+    restart: "no"
+
+volumes:
+  server_data:
+  model_cache:
+  postgres_data:
+  qdrant_data:
+  ollama_models:

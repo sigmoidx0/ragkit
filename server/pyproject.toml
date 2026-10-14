@@ -32,12 +32,17 @@ dependencies = [
     "tiktoken>=0.12.0",
     "fastembed>=0.4.0",
     "sentence-transformers>=5.4.1",
+    # Pulled in by sentence-transformers; listed so [tool.uv.sources] can route
+    # it to the CPU-only build on Linux (see below).
+    "torch>=2.4",
     "langchain-openai>=0.3.0",
     "langchain-anthropic>=0.3.0",
     "langchain-ollama>=0.3.0",
     "sse-starlette>=2.1.0",
     "langgraph>=0.4.0",
     "langgraph-checkpoint-sqlite>=2.0.0",
+    "langgraph-checkpoint-postgres>=2.0.0",
+    "psycopg-pool>=3.2.0",
 ]
 
 [dependency-groups]
@@ -50,6 +55,17 @@ dev = [
 
 [tool.uv]
 package = false
+
+# The reranker runs on CPU. PyPI's Linux torch wheels bundle CUDA (several GB of
+# nvidia-* packages), which made the server image ~10 GB; on Linux — i.e. in the
+# container — install the CPU build instead. macOS keeps the PyPI wheel.
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [tool.ruff]
 line-length = 100
