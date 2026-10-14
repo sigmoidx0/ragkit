@@ -92,8 +92,11 @@ search:
     #                       cross-encoder/ms-marco-MiniLM-L-6-v2 (English, ~80 MB)
     # cohere models:        rerank-v3.5 | rerank-english-v3.0 | rerank-multilingual-v3.0
     model: BAAI/bge-reranker-base
-    # How many candidates to fetch per final result. top_k=5, multiplier=4 → fetch 20.
-    fetch_k_multiplier: 4
+    # How many candidates to fetch per final result. top_k=5, multiplier=8 → fetch 40.
+    # Raised from 4: at 20 candidates the right chunk often never reached the
+    # reranker, which then ranked it first once it did. Eval (2026-10-14, 9
+    # questions over 2 agents): document hit rate 60%→100% and 50%→100%.
+    fetch_k_multiplier: 8
 
 admin_bootstrap:
   # Initial admin account created on first startup (if no users exist yet).
@@ -102,24 +105,30 @@ admin_bootstrap:
   password_env: INITIAL_ADMIN_PASSWORD
 
 llm:
-  # Which LLM backend to use for /chat. Pick one of: ollama | openai | anthropic | vllm
+  # Which LLM backend to use for /chat. Pick one of: ollama | openai | anthropic | google | vllm
   provider: ollama
   # Model name. Examples:
   #   ollama:    gemma3:4b  |  qwen2.5:3b  |  llama3.2:3b
   #   openai:    gpt-4o-mini
   #   anthropic: claude-haiku-4-5-20251001
+  #   google:    gemini-3.5-flash  |  gemini-3.5-flash-lite  |  gemini-3.8-flash
   #   vllm:      <model-name-served-by-vllm>
   model: qwen2.5:14b
   temperature: 0.0
   max_tokens: 2048
   # API key: set LLM_API_KEY env var (not needed for ollama/vllm)
+  #   google: an AI Studio key — https://aistudio.google.com/apikey
   ollama:
     base_url: http://localhost:11434
   vllm:
     base_url: http://localhost:8000/v1
+  google:
+    # Gemini's OpenAI-compatible endpoint — reuses the openai client.
+    base_url: https://generativelanguage.googleapis.com/v1beta/openai/
 
 agent:
-  # Maximum number of tool-call rounds before the agent is forced to answer.
+  # Hard ceiling on tool-call rounds per sub-agent before it must answer.
+  # Caps cost and stops a model that keeps retrieving instead of responding.
   max_iterations: 5
 
 chat:

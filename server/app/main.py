@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.agent.checkpoint import checkpointer_lifespan
 from app.api import (
+    agent_config,
     auth,
     chat,
     documents,
@@ -73,6 +74,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(auth.router)
     app.include_router(services.router)
+    app.include_router(agent_config.router)
     app.include_router(documents.router)
     app.include_router(ingest.router)
     app.include_router(search.router)

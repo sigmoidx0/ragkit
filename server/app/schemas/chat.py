@@ -14,8 +14,8 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     messages: list[ChatMessage] = Field(min_length=1)
     top_k: int | None = None
-    filters: dict | None = None
-    retrieval_mode: Literal["on", "off", "auto"] = "on"
+    # None uses the agent's configured default_retrieval_mode.
+    retrieval_mode: Literal["on", "off", "auto"] | None = None
 
 
 # ── SSE event payloads ───────────────────────────────────────────────────────
@@ -53,6 +53,46 @@ class SupervisorRouteEvent(BaseModel):
     agent_type: Literal["retrieval", "summary", "comparison"]
 
 
+class GraphNode(BaseModel):
+    id: str
+    label: str
+    # "entry"/"exit" are LangGraph's __start__/__end__ sentinels; "supervisor"
+    # routes, "agent" does the work. The UI styles each kind differently.
+    kind: Literal["entry", "exit", "supervisor", "agent", "delegate"]
+
+
+class GraphEdge(BaseModel):
+    source: str
+    target: str
+    label: str | None = None  # route name, on conditional edges only
+    conditional: bool = False
+    # A tool edge: the source agent may call the target (a delegate agent) as a
+    # tool, rather than handing control to it.
+    tool: bool = False
+
+
+class GraphEvent(BaseModel):
+    """The shape of the graph for this run, sent once before execution starts."""
+
+    nodes: list[GraphNode]
+    edges: list[GraphEdge]
+
+
+class NodeStateEvent(BaseModel):
+    """Which node the run is in right now, so the UI can highlight it."""
+
+    node: str
+    status: Literal["running", "done"]
+
+
+class DelegateStateEvent(BaseModel):
+    """Progress inside a delegate agent, drawn nested within its node."""
+
+    delegate: str  # the delegate's node id, "delegate:<agent id>"
+    node: str  # a node of the delegate's own graph
+    status: Literal["running", "done"]
+
+
 class ErrorEvent(BaseModel):
     error: str
 
@@ -77,10 +117,12 @@ class SessionMessageResponse(BaseModel):
     role: str
     content: str
     sources: list[SourceItem] = Field(default_factory=list)
+    # Assistant messages only: which answer in the session this is.
+    turn_index: int | None = None
 
 
 class SessionChatRequest(BaseModel):
     message: str = Field(min_length=1)
     top_k: int | None = None
-    filters: dict | None = None
-    retrieval_mode: Literal["on", "off", "auto"] = "on"
+    # None uses the agent's configured default_retrieval_mode.
+    retrieval_mode: Literal["on", "off", "auto"] | None = None

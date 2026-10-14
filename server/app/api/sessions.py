@@ -6,11 +6,11 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import StreamingResponse
-from langchain_core.messages import AIMessage, HumanMessage
-from sqlalchemy import select, text
+from sqlalchemy import select
 
 from app.agent.checkpoint import get_checkpointer
 from app.agent.executor import session_agent_stream
+from app.agent.history import session_turns
 from app.api.deps import CurrentUser, DbDep, ServiceMemberDep
 from app.core.config import get_settings
 from app.db.models import ChatSession, ChatTurnSources
@@ -97,27 +97,19 @@ async def list_messages(
         row.turn_index: [SourceItem(**s) for s in row.sources_json]
         for row in rows
     }
-
-    result: list[SessionMessageResponse] = []
-    ai_turn = 0
-    for msg in lc_msgs:
-        if isinstance(msg, HumanMessage):
-            result.append(SessionMessageResponse(role="user", content=str(msg.content)))
-        elif isinstance(msg, AIMessage) and msg.content:
-            result.append(SessionMessageResponse(
-                role="assistant",
-                content=str(msg.content),
-                sources=sources_by_turn.get(ai_turn, []),
-            ))
-            ai_turn += 1
-    return result
-
-
-_CHECKPOINT_TABLES = ("checkpoints", "writes")
+    return [
+        SessionMessageResponse(
+            role=turn.role,
+            content=turn.content,
+            sources=sources_by_turn.get(turn.turn_index, []) if turn.turn_index is not None else [],
+            turn_index=turn.turn_index,
+        )
+        for turn in session_turns(lc_msgs)
+    ]
 
 
 @router.delete("/services/{service_id}/sessions/{session_id}", status_code=204)
-def delete_session(
+async def delete_session(
     service_id: int,
     session_id: int,
     _membership: ServiceMemberDep,
@@ -125,9 +117,11 @@ def delete_session(
     db: DbDep,
 ) -> None:
     session = _get_session_or_404(db, session_id, user.id, service_id)
+    # Through the saver's own API: its tables differ by backend (SQLite has
+    # `writes`, Postgres has `checkpoint_writes` + `checkpoint_blobs`), and
+    # naming them here broke deletion on Postgres.
+    await get_checkpointer().adelete_thread(str(session_id))
     db.delete(session)
-    for table in _CHECKPOINT_TABLES:
-        db.execute(text(f"DELETE FROM {table} WHERE thread_id = :tid"), {"tid": str(session_id)})  # noqa: S608
     db.commit()
 
 
@@ -150,7 +144,9 @@ async def session_chat(
     db.commit()
 
     return StreamingResponse(
-        session_agent_stream(db, service_id, str(session_id), body.message, body.top_k, body.filters, body.retrieval_mode),
+        session_agent_stream(
+            db, service_id, str(session_id), body.message, body.top_k, body.retrieval_mode, user_id=user.id
+        ),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

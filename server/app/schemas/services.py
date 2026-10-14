@@ -5,6 +5,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.db.models import ServiceRole
+from app.schemas.agent_config import AgentConfig
 
 
 class ServiceCreate(BaseModel):
@@ -43,3 +44,13 @@ class ServiceMemberUpdate(BaseModel):
 
 class ServiceWithRoleOut(ServiceOut):
     role: ServiceRole
+
+
+class AgentCardOut(ServiceWithRoleOut):
+    """One agent as the landing page shows it."""
+
+    agent_config: AgentConfig
+    document_count: int
+    # Resolved "provider · model" the agent will actually run on, after
+    # config.yaml defaults are applied — what a user needs to see on the card.
+    model_label: str

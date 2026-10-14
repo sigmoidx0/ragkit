@@ -55,6 +55,9 @@ class Service(TimestampMixin, Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     slug: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+    # Per-agent settings (model, retrieval, router, landing card). Parsed and
+    # validated through app.schemas.agent_config.AgentConfig; NULL means defaults.
+    agent_config: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 
 
 class ServiceMembership(TimestampMixin, Base):
@@ -142,3 +145,4 @@ class Pipeline(TimestampMixin, Base):
         default=PipelineStatus.draft,
         server_default=PipelineStatus.draft.value,
     )
+

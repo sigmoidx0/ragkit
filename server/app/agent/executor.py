@@ -1,4 +1,12 @@
-"""Stream SSE events from the multi-agent RAG graph."""
+"""Stream SSE events from the multi-agent RAG graph.
+
+Event types the UI consumes:
+    graph           shape of this run's graph, once up front
+    node_state      which top-level node is running / done
+    delegate_state  progress inside a delegate agent (agent-as-tool)
+    span            trace spans (nodes, LLM calls, tool calls) for the waterfall
+    supervisor_route, agent_step, token, done, error
+"""
 
 from __future__ import annotations
 
@@ -11,14 +19,22 @@ from langchain_core.messages import AIMessage, HumanMessage
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.agent.graph import build_multi_agent_graph
-from app.core.config import get_settings
-from app.db.models import ChatTurnSources, SystemPrompt
+from app.agent.agents import INTERNAL_LLM_TAG
+from app.agent.config import load_agent_config, load_system_prompt
+from app.agent.delegation import DELEGATE_NODE_EVENT, DELEGATE_SOURCES_EVENT, DELEGATE_TOOL_PREFIX
+from app.agent.graph import BuiltGraph, build_multi_agent_graph, graph_node_ids
+from app.agent.history import count_answers
+from app.agent.trace import TraceRecorder
+from app.db.models import ChatTurnSources, Service
+from app.schemas.agent_config import RetrievalMode
 from app.schemas.chat import (
     AgentStepEvent,
     ChatMessage,
+    DelegateStateEvent,
     DoneEvent,
     ErrorEvent,
+    NodeStateEvent,
+    SourceItem,
     SupervisorRouteEvent,
     TokenEvent,
 )
@@ -28,18 +44,21 @@ logger = logging.getLogger(__name__)
 _SUB_AGENT_NODES = {"retrieval_agent", "summary_agent", "comparison_agent", "direct_agent"}
 
 
+def _tool_query(raw_input: dict | None, key: str = "query") -> str:
+    """Normalize a tool's string argument.
+
+    Providers disagree on the shape. Most send `{"query": "휴학 절차"}`, but some
+    local models (qwen2.5 via Ollama, for one) wrap each argument in its schema:
+    `{"query": {"type": "string", "value": "휴학 절차"}}`.
+    """
+    value = (raw_input or {}).get(key, "")
+    if isinstance(value, dict):
+        value = value.get("value") or value.get(key) or ""
+    return value if isinstance(value, str) else str(value)
+
+
 def _sse(event: str, payload: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(payload)}\n\n"
-
-
-def _load_system_prompt(db: Session, service_id: int) -> str:
-    row = db.execute(
-        select(SystemPrompt).where(
-            SystemPrompt.service_id == service_id,
-            SystemPrompt.is_active.is_(True),
-        )
-    ).scalar_one_or_none()
-    return row.content if row else get_settings().chat.fallback_system_prompt
 
 
 def _to_lc_messages(messages: list[ChatMessage]) -> list:
@@ -70,60 +89,98 @@ def _token_sse_from_chunk(event: dict) -> list[str]:
     return []
 
 
-async def _stream_graph(graph, sources_store: dict, input_state: dict, run_config: dict):
+async def _stream_graph(built: BuiltGraph, input_state: dict, run_config: dict):
     # on_chat_model_stream events inside sub-agents carry langgraph_node="agent"
     # (the inner ReAct node), not the outer node name. Track entry/exit instead.
-    _pending_queries: dict[str, str] = {}  # run_id → query, supports parallel tool calls
-    _in_sub_agent = False
+    pending_queries: dict[str, str] = {}  # run_id → query, supports parallel tool calls
+    in_sub_agent = False
+    delegate_nodes = {d.tool_name: d.node_id for d in built.delegates}  # tool name → graph node id
+
+    yield _sse("graph", built.topology().model_dump())
+    # Only nodes the graph actually has are reported, so stray on_chain_start
+    # events from inner ReAct machinery don't light up the diagram.
+    graph_nodes = graph_node_ids(built.graph)
+    trace = TraceRecorder(graph_nodes)
+
     try:
-        async for event in graph.astream_events(input_state, config=run_config, version="v2"):
+        async for event in built.graph.astream_events(input_state, config=run_config, version="v2"):
             kind = event["event"]
             name = event.get("name", "")
+
+            # ── tracing ──
+            span_meta: dict = {}
+            if kind == "on_tool_start":
+                span_meta["input"] = _tool_query(
+                    event["data"].get("input"), "question" if name.startswith(DELEGATE_TOOL_PREFIX) else "query"
+                )
+            elif kind in ("on_tool_end", "on_tool_error") and name == "retrieval":
+                span_meta["hits"] = len(built.sources_store.get(pending_queries.get(event.get("run_id", ""), ""), []))
+            if (span := trace.observe(event, span_meta)) is not None:
+                yield _sse("span", span.model_dump())
+
+            # ── graph highlighting ──
+            if kind == "on_chain_start" and name in graph_nodes:
+                yield _sse("node_state", NodeStateEvent(node=name, status="running").model_dump())
+            elif kind == "on_chain_end" and name in graph_nodes:
+                yield _sse("node_state", NodeStateEvent(node=name, status="done").model_dump())
 
             if kind == "on_chain_end" and name == "supervisor":
                 output = event["data"].get("output") or {}
                 agent_type = output.get("agent_type", "")
                 if agent_type and agent_type != "direct":
-                    logger.debug("[stream] supervisor routed to agent_type=%r", agent_type)
-                    yield _sse(
-                        "supervisor_route",
-                        SupervisorRouteEvent(agent_type=agent_type).model_dump(),
-                    )
+                    yield _sse("supervisor_route", SupervisorRouteEvent(agent_type=agent_type).model_dump())
 
             elif kind == "on_chain_start" and name in _SUB_AGENT_NODES:
-                logger.debug("[stream] entering sub-agent node=%r", name)
-                _in_sub_agent = True
+                in_sub_agent = True
 
             elif kind == "on_chain_end" and name in _SUB_AGENT_NODES:
-                logger.debug("[stream] sub-agent node=%r finished", name)
-                _in_sub_agent = False
+                in_sub_agent = False
 
+            # ── own document searches ──
             elif kind == "on_tool_start" and name == "retrieval":
                 run_id = event.get("run_id", "")
-                query = (event["data"].get("input") or {}).get("query", "")
+                query = _tool_query(event["data"].get("input"))
                 if query:
-                    _pending_queries[run_id] = query
-                    logger.debug("[stream] tool_call retrieval query=%r", query)
+                    pending_queries[run_id] = query
                     yield _sse(
                         "agent_step",
-                        AgentStepEvent(
-                            type="tool_call", tool="retrieval", input=query
-                        ).model_dump(),
+                        AgentStepEvent(type="tool_call", tool="retrieval", input=query).model_dump(),
                     )
 
-            elif kind == "on_tool_end" and name == "retrieval":
-                run_id = event.get("run_id", "")
-                query = _pending_queries.pop(run_id, "")
-                sources = sources_store.get(query, [])
-                logger.debug("[stream] observation retrieval sources=%d", len(sources))
+            # on_tool_error is handled alongside on_tool_end so a failed lookup
+            # still closes out its tool_call instead of leaving the UI waiting.
+            elif kind in ("on_tool_end", "on_tool_error") and name == "retrieval":
+                query = pending_queries.pop(event.get("run_id", ""), "")
+                sources = built.sources_store.get(query, [])
+                yield _sse(
+                    "agent_step",
+                    AgentStepEvent(type="observation", tool="retrieval", output=sources).model_dump(),
+                )
+
+            # ── delegate agents (agent-as-tool) ──
+            elif kind == "on_tool_start" and name in delegate_nodes:
+                question = _tool_query(event["data"].get("input"), "question")
+                yield _sse("agent_step", AgentStepEvent(type="tool_call", tool=name, input=question).model_dump())
+                yield _sse("node_state", NodeStateEvent(node=delegate_nodes[name], status="running").model_dump())
+
+            elif kind in ("on_tool_end", "on_tool_error") and name in delegate_nodes:
+                yield _sse("node_state", NodeStateEvent(node=delegate_nodes[name], status="done").model_dump())
+
+            elif kind == "on_custom_event" and name == DELEGATE_NODE_EVENT:
+                yield _sse("delegate_state", DelegateStateEvent(**event["data"]).model_dump())
+
+            elif kind == "on_custom_event" and name == DELEGATE_SOURCES_EVENT:
+                data = event["data"]
                 yield _sse(
                     "agent_step",
                     AgentStepEvent(
-                        type="observation", tool="retrieval", output=sources
+                        type="observation",
+                        tool=data["tool"],
+                        output=[SourceItem(**s) for s in data["sources"]],
                     ).model_dump(),
                 )
 
-            elif kind == "on_chat_model_stream" and _in_sub_agent:
+            elif kind == "on_chat_model_stream" and in_sub_agent and INTERNAL_LLM_TAG not in (event.get("tags") or []):
                 for token_sse in _token_sse_from_chunk(event):
                     yield token_sse
 
@@ -132,8 +189,29 @@ async def _stream_graph(graph, sources_store: dict, input_state: dict, run_confi
         yield _sse("error", ErrorEvent(error=str(exc)).model_dump())
         return
 
-    logger.debug("[stream] pipeline done")
     yield _sse("done", DoneEvent(finish_reason="stop").model_dump())
+
+
+def _build_graph(
+    db: Session,
+    service_id: int,
+    top_k: int | None,
+    retrieval_mode: RetrievalMode | None,
+    user_id: int | None,
+    checkpointer=None,
+) -> BuiltGraph:
+    """Load the agent's config and prompt, then assemble its graph for one run."""
+    agent_cfg = load_agent_config(db.get(Service, service_id))
+    return build_multi_agent_graph(
+        db,
+        service_id,
+        agent_cfg,
+        load_system_prompt(db, service_id),
+        retrieval_mode or agent_cfg.default_retrieval_mode,
+        top_k=top_k,
+        checkpointer=checkpointer,
+        user_id=user_id,
+    )
 
 
 async def agent_stream(
@@ -141,23 +219,23 @@ async def agent_stream(
     service_id: int,
     messages: list[ChatMessage],
     top_k: int | None = None,
-    filters: dict | None = None,
-    retrieval_mode: str = "on",
+    retrieval_mode: RetrievalMode | None = None,
+    user_id: int | None = None,
 ) -> AsyncIterator[str]:
-    cfg = get_settings()
-    _top_k = top_k or cfg.chat.default_top_k
-
     if not any(m.role == "user" for m in messages):
         yield _sse("error", ErrorEvent(error="no user message provided").model_dump())
         return
 
-    system_prompt = await asyncio.to_thread(_load_system_prompt, db, service_id)
-    graph, sources_store = build_multi_agent_graph(
-        db, service_id, _top_k, system_prompt, retrieval_mode, checkpointer=None
-    )
+    try:
+        built = await asyncio.to_thread(_build_graph, db, service_id, top_k, retrieval_mode, user_id)
+    except ValueError as exc:
+        # A misconfigured agent (e.g. a provider with no model) fails here, before
+        # streaming starts, so report it as a normal error event.
+        yield _sse("error", ErrorEvent(error=str(exc)).model_dump())
+        return
 
     input_state = {"messages": _to_lc_messages(messages), "agent_type": ""}
-    async for chunk in _stream_graph(graph, sources_store, input_state, run_config={}):
+    async for chunk in _stream_graph(built, input_state, run_config={}):
         yield chunk
 
 
@@ -181,33 +259,31 @@ async def session_agent_stream(
     thread_id: str,
     new_message: str,
     top_k: int | None = None,
-    filters: dict | None = None,
-    retrieval_mode: str = "on",
+    retrieval_mode: RetrievalMode | None = None,
+    user_id: int | None = None,
 ) -> AsyncIterator[str]:
     from app.agent.checkpoint import get_checkpointer
 
-    cfg = get_settings()
-    _top_k = top_k or cfg.chat.default_top_k
-    system_prompt = await asyncio.to_thread(_load_system_prompt, db, service_id)
-
     checkpointer = get_checkpointer()
-    graph, sources_store = build_multi_agent_graph(
-        db, service_id, _top_k, system_prompt, retrieval_mode, checkpointer=checkpointer
-    )
+    try:
+        built = await asyncio.to_thread(
+            _build_graph, db, service_id, top_k, retrieval_mode, user_id, checkpointer
+        )
+    except ValueError as exc:
+        yield _sse("error", ErrorEvent(error=str(exc)).model_dump())
+        return
 
     # Count existing AI turns to get the index for this new turn
     cp_tuple = await checkpointer.aget_tuple({"configurable": {"thread_id": thread_id}})
-    ai_turn_index = 0
-    if cp_tuple:
-        lc_msgs = cp_tuple.checkpoint.get("channel_values", {}).get("messages", [])
-        ai_turn_index = sum(1 for m in lc_msgs if isinstance(m, AIMessage))
+    lc_msgs = cp_tuple.checkpoint.get("channel_values", {}).get("messages", []) if cp_tuple else []
+    ai_turn_index = count_answers(lc_msgs)
 
     input_state = {"messages": [HumanMessage(content=new_message)], "agent_type": ""}
     run_config = {"configurable": {"thread_id": thread_id}}
 
-    async for chunk in _stream_graph(graph, sources_store, input_state, run_config):
+    async for chunk in _stream_graph(built, input_state, run_config):
         yield chunk
 
-    all_sources = [s.model_dump() for sources in sources_store.values() for s in sources]
+    all_sources = [s.model_dump() for sources in built.sources_store.values() for s in sources]
     if all_sources:
         await asyncio.to_thread(_save_turn_sources, db, int(thread_id), ai_turn_index, all_sources)

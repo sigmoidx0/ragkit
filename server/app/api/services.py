@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 
+from app.agent.config import load_agent_config, resolve_llm
 from app.api.deps import (
     CurrentUser,
     DbDep,
@@ -13,8 +14,9 @@ from app.api.deps import (
     SuperAdminDep,
     is_superadmin,
 )
-from app.db.models import Service, ServiceMembership, ServiceRole, User
+from app.db.models import Document, Service, ServiceMembership, ServiceRole, User
 from app.schemas.services import (
+    AgentCardOut,
     ServiceCreate,
     ServiceMemberCreate,
     ServiceMemberOut,
@@ -75,6 +77,34 @@ def list_my_services(user: CurrentUser, db: DbDep) -> list[ServiceWithRoleOut]:
         .order_by(Service.name)
     ).all()
     return [ServiceWithRoleOut(**ServiceOut.model_validate(s).model_dump(), role=role) for s, role in rows]
+
+
+@router.get("/me/agents", response_model=list[AgentCardOut])
+def list_my_agents(user: CurrentUser, db: DbDep) -> list[AgentCardOut]:
+    """The agents this user can chat with, with what the landing cards need."""
+    my_services = list_my_services(user, db)
+    counts = dict(
+        db.execute(
+            select(Document.service_id, func.count(Document.id)).group_by(Document.service_id)
+        ).all()
+    )
+    cards: list[AgentCardOut] = []
+    for svc in my_services:
+        agent_cfg = load_agent_config(db.get(Service, svc.id))
+        try:
+            llm = resolve_llm(agent_cfg)
+            model_label = f"{llm.provider} · {llm.model}"
+        except ValueError:
+            model_label = "misconfigured"
+        cards.append(
+            AgentCardOut(
+                **svc.model_dump(),
+                agent_config=agent_cfg,
+                document_count=counts.get(svc.id, 0),
+                model_label=model_label,
+            )
+        )
+    return cards
 
 
 # ── Membership management (service admin) ───────────────────────────────────
