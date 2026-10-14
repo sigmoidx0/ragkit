@@ -7,7 +7,7 @@ import { useService } from "@/services/ServiceProvider";
 import { useAuth } from "@/auth/AuthProvider";
 import { Button, Card, Textarea, Badge } from "@/components/ui";
 import { cn } from "@/lib/cn";
-import type { AgentCard, AgentRouteType, AgentStep, ChatRole, ChatSession, ChatTurn, GraphTopology, NodeStatus, RetrievalMode, SourceItem, SystemPrompt, TraceSpan } from "@/api/types";
+import type { AgentCard, AgentRouteType, AgentStep, ChatRole, ChatSession, ChatTurn, GraphTopology, NodeStatus, Rating, RetrievalMode, SourceItem, SystemPrompt, TraceSpan } from "@/api/types";
 import { CitedMarkdown } from "@/components/chat/CitedMarkdown";
 import { RunInspector, type RunState } from "@/components/chat/RunInspector";
 import { getAgentTheme } from "@/lib/agentTheme";
@@ -365,7 +365,104 @@ function Sources({ sources }: { sources: SourceItem[] }) {
 
 // ── Message bubble ───────────────────────────────────────────────────────────
 
-function MessageBubble({ turn }: { turn: ChatTurn }) {
+// ── Answer feedback ──────────────────────────────────────────────────────────
+
+function AnswerFeedback({
+  feedback,
+  onRate,
+}: {
+  feedback: ChatTurn["feedback"];
+  onRate: (rating: Rating | null, comment?: string | null) => void;
+}) {
+  const [draft, setDraft] = useState(feedback?.comment ?? "");
+  const [editing, setEditing] = useState(false);
+  const rating = feedback?.rating ?? null;
+
+  const choose = (r: Rating) => {
+    // Clicking the current rating again takes it back.
+    if (rating === r) {
+      onRate(null);
+      setEditing(false);
+      return;
+    }
+    onRate(r, r === -1 ? null : undefined);
+    // A thumbs-down is most useful with a reason, so offer the box right away.
+    setEditing(r === -1);
+  };
+
+  const btn = (r: Rating, label: string, title: string) => (
+    <button
+      type="button"
+      title={title}
+      onClick={() => choose(r)}
+      className={cn(
+        "rounded-md px-1.5 py-0.5 text-xs transition-colors",
+        rating === r
+          ? r === 1
+            ? "bg-teal-50 text-teal-600 dark:bg-teal-900/40 dark:text-teal-300"
+            : "bg-rose-50 text-rose-600 dark:bg-rose-900/40 dark:text-rose-300"
+          : "text-gray-300 hover:bg-gray-100 hover:text-gray-500 dark:text-gray-500 dark:hover:bg-gray-700",
+      )}
+    >
+      {label}
+    </button>
+  );
+
+  return (
+    <div className="mt-1.5">
+      <div className="flex items-center gap-0.5">
+        {btn(1, "👍", "Helpful")}
+        {btn(-1, "👎", "Not helpful")}
+        {rating === -1 && !editing && (
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            className="ml-1 truncate text-[11px] text-gray-400 hover:text-gray-600"
+          >
+            {feedback?.comment ? `“${feedback.comment}”` : "Add a reason"}
+          </button>
+        )}
+      </div>
+      {editing && (
+        <div className="mt-1.5 flex gap-1.5">
+          <input
+            autoFocus
+            value={draft}
+            maxLength={1000}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                onRate(-1, draft.trim() || null);
+                setEditing(false);
+              }
+            }}
+            placeholder="What was wrong? (optional — helps tune the agent)"
+            className="flex-1 rounded-lg border border-gray-200 px-2 py-1 text-xs focus:border-rose-300 focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+          />
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => {
+              onRate(-1, draft.trim() || null);
+              setEditing(false);
+            }}
+          >
+            Save
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MessageBubble({
+  turn,
+  onRate,
+}: {
+  turn: ChatTurn;
+  /** Present when this answer can be rated (finished, saved in a session). */
+  onRate?: (rating: Rating | null, comment?: string | null) => void;
+}) {
   const isUser = turn.role === "user";
   return (
     <div className={cn("flex", isUser ? "justify-end" : "justify-start")}>
@@ -402,6 +499,7 @@ function MessageBubble({ turn }: { turn: ChatTurn }) {
           )}
         </div>
         {!isUser && <Sources sources={turn.sources} />}
+        {!isUser && onRate && <AnswerFeedback feedback={turn.feedback} onRate={onRate} />}
       </div>
     </div>
   );
@@ -823,6 +921,8 @@ export default function ChatPage() {
             agentSteps: [],
             sources: m.sources ?? [],
             isStreaming: false,
+            turnIndex: m.turn_index ?? undefined,
+            feedback: m.feedback,
           })),
         );
       })
@@ -841,6 +941,21 @@ export default function ChatPage() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [turns]);
+
+  async function rateTurn(turnId: string, turnIndex: number, rating: Rating | null, comment?: string | null) {
+    if (!service || !activeSessionId) return;
+    const before = turns.find((t) => t.id === turnId)?.feedback ?? null;
+    const next = rating == null ? null : { rating, comment: comment === undefined ? (before?.comment ?? null) : comment };
+    // Optimistic: the thumb lights up immediately, and reverts if the save fails.
+    setTurns((prev) => prev.map((t) => (t.id === turnId ? { ...t, turnIndex, feedback: next } : t)));
+    try {
+      if (next == null) await SessionsApi.clearRating(service.id, activeSessionId, turnIndex);
+      else await SessionsApi.rate(service.id, activeSessionId, turnIndex, next.rating, next.comment);
+    } catch (e) {
+      setTurns((prev) => prev.map((t) => (t.id === turnId ? { ...t, feedback: before } : t)));
+      toast.error(e instanceof Error ? e.message : "Couldn't save your rating");
+    }
+  }
 
   async function sendMessage(text?: string, opts: { newSession?: boolean } = {}) {
     const query = (text ?? input).trim();
@@ -1123,7 +1238,23 @@ export default function ChatPage() {
             ) : turns.length === 0 ? (
               <AgentWelcome agent={service} onAsk={(q) => void sendMessage(q)} />
             ) : (
-              turns.map((turn) => <MessageBubble key={turn.id} turn={turn} />)
+              (() => {
+                // Answers streamed in this view have no index from the server yet;
+                // number them the way the server does — finished answers only.
+                let answers = 0;
+                return turns.map((turn) => {
+                  const rateable = turn.role === "assistant" && !turn.isStreaming && !turn.error && !!turn.content;
+                  const index = rateable ? (turn.turnIndex ?? answers) : undefined;
+                  if (rateable) answers = index! + 1;
+                  return (
+                    <MessageBubble
+                      key={turn.id}
+                      turn={turn}
+                      onRate={index != null ? (r, c) => void rateTurn(turn.id, index, r, c) : undefined}
+                    />
+                  );
+                });
+              })()
             )}
             <div ref={bottomRef} />
           </div>

@@ -284,10 +284,39 @@ export interface ChatSession {
   updated_at: string;
 }
 
+export type Rating = 1 | -1;
+
+export interface Feedback {
+  rating: Rating;
+  comment: string | null;
+}
+
 export interface SessionMessage {
   role: string;
   content: string;
   sources: SourceItem[];
+  /** Assistant messages: which answer in the session this is (0-based). */
+  turn_index: number | null;
+  feedback: Feedback | null;
+}
+
+export interface FeedbackItem {
+  id: number;
+  session_id: number;
+  session_title: string | null;
+  user_email: string;
+  turn_index: number;
+  rating: Rating;
+  comment: string | null;
+  question: string;
+  answer: string;
+  created_at: string;
+}
+
+export interface FeedbackOverview {
+  up: number;
+  down: number;
+  items: FeedbackItem[];
 }
 
 // ---------------------------------------------------------------------------
@@ -369,4 +398,69 @@ export interface ChatTurn {
   isStreaming: boolean;
   agentRoute?: AgentRouteType;
   error?: string;
+  /** Assistant turns: position among the session's answers, for rating it. */
+  turnIndex?: number;
+  feedback?: Feedback | null;
+}
+
+// ── Evaluations ───────────────────────────────────────────────────────────────
+
+export interface EvalCase {
+  question: string;
+  /** The document a good answer should come from (enables hit / MRR). */
+  expected_document_id: number | null;
+  /** Facts a correct answer must state (enables answer coverage). */
+  expected_keywords?: string[];
+}
+
+export interface EvalCaseResult {
+  question: string;
+  expected_document_id: number | null;
+  answer: string;
+  route: string | null;
+  sources: SourceItem[];
+  latency_ms: number;
+  tool_calls: number;
+  input_tokens: number;
+  output_tokens: number;
+  hit: boolean | null;
+  rank: number | null;
+  keyword_recall: number | null;
+  missing_keywords: string[];
+  groundedness: number | null;
+  judge_reason: string | null;
+  error: string | null;
+}
+
+export interface EvalSummary {
+  cases: number;
+  completed: number;
+  errors: number;
+  hit_rate: number | null;
+  mrr: number | null;
+  keyword_recall: number | null;
+  avg_groundedness: number | null;
+  avg_latency_ms: number | null;
+  p95_latency_ms: number | null;
+  avg_tool_calls: number | null;
+  total_tokens: number;
+  judge_model: string;
+}
+
+export type EvalStatus = "pending" | "running" | "done" | "failed";
+
+export interface EvalRun {
+  id: number;
+  service_id: number;
+  name: string;
+  status: EvalStatus;
+  config_snapshot: AgentConfig;
+  /** The system prompt the run used (snapshotted when it was created). */
+  prompt_name: string | null;
+  cases: EvalCase[];
+  results: EvalCaseResult[];
+  summary: EvalSummary | null;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
 }

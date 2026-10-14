@@ -15,6 +15,7 @@ import PipelineBuilderPage from "./pages/PipelineBuilderPage";
 import ChatPage from "./pages/ChatPage";
 import AgentHomePage from "./pages/AgentHomePage";
 import AgentSettingsPage from "./pages/AgentSettingsPage";
+import EvalPage from "./pages/EvalPage";
 
 export default function App() {
   return (
@@ -41,6 +42,7 @@ export default function App() {
         <Route path="/playground" element={<RequireServiceAdmin><PlaygroundPage /></RequireServiceAdmin>} />
         <Route path="/pipeline" element={<PipelineBuilderPage />} />
         <Route path="/chat" element={<ChatPage />} />
+        <Route path="/evals" element={<RequireServiceAdmin><EvalPage /></RequireServiceAdmin>} />
         <Route path="/agent-settings" element={<RequireServiceAdmin><AgentSettingsPage /></RequireServiceAdmin>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

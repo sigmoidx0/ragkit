@@ -98,6 +98,14 @@ function SunIcon() {
   );
 }
 
+function ChartIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4">
+      <path d="M5 9.2h3V19H5V9.2zM10.6 5h2.8v14h-2.8V5zm5.6 8H19v6h-2.8v-6z" />
+    </svg>
+  );
+}
+
 function GridIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4">
@@ -223,6 +231,7 @@ function ServiceSwitcher({
 const PAGE_NAMES: Record<string, string> = {
   "/": "Agents",
   "/agent-settings": "Agent Settings",
+  "/evals": "Evaluate",
   "/documents": "Documents",
   "/search": "Search",
   "/chat": "Chat",
@@ -339,6 +348,9 @@ function SidebarContent({
         <SidebarNavItem to="/pipeline" icon={<FlowIcon />} label="Pipeline" onClick={onNavClick} />
         {isServiceAdmin && (
           <SidebarNavItem to="/playground" icon={<BeakerIcon />} label="Playground" onClick={onNavClick} />
+        )}
+        {isServiceAdmin && (
+          <SidebarNavItem to="/evals" icon={<ChartIcon />} label="Evaluate" onClick={onNavClick} />
         )}
 
         {(isServiceAdmin || isSuperAdmin) && (

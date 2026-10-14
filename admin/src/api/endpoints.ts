@@ -1,6 +1,11 @@
 import { apiFetch, apiFetchBlob, apiSSE } from "./client";
 import type {
   AgentCard,
+  Feedback,
+  FeedbackOverview,
+  Rating,
+  EvalCase,
+  EvalRun,
   AgentConfig,
   GraphTopology,
   ProviderInfo,
@@ -107,6 +112,22 @@ export const AgentsApi = {
   providers: () => apiFetch<ProviderInfo[]>("/llm/providers"),
 };
 
+export const EvalsApi = {
+  list: (serviceId: number) => apiFetch<EvalRun[]>(`/services/${serviceId}/evals`),
+  create: (
+    serviceId: number,
+    body: { name: string; cases: EvalCase[]; config?: AgentConfig | null; system_prompt_id?: number | null },
+  ) =>
+    apiFetch<EvalRun>(`/services/${serviceId}/evals`, { body }),
+  remove: (serviceId: number, runId: number) =>
+    apiFetch<void>(`/services/${serviceId}/evals/${runId}`, { method: "DELETE" }),
+};
+
+export const FeedbackApi = {
+  list: (serviceId: number, rating?: Rating) =>
+    apiFetch<FeedbackOverview>(`/services/${serviceId}/feedback${rating ? `?rating=${rating}` : ""}`),
+};
+
 export const PipelineApi = {
   schema: () => apiFetch<PipelineSchema>("/pipeline-schema"),
   nodeModels: () => apiFetch<NodeModels>("/pipeline-node-models"),
@@ -156,6 +177,13 @@ export const SessionsApi = {
     apiFetch<ChatSession>(`/services/${serviceId}/sessions`, { body: { title: title ?? null } }),
   messages: (serviceId: number, sessionId: number) =>
     apiFetch<SessionMessage[]>(`/services/${serviceId}/sessions/${sessionId}/messages`),
+  rate: (serviceId: number, sessionId: number, turnIndex: number, rating: Rating, comment?: string | null) =>
+    apiFetch<Feedback>(`/services/${serviceId}/sessions/${sessionId}/turns/${turnIndex}/feedback`, {
+      method: "PUT",
+      body: { rating, comment: comment ?? null },
+    }),
+  clearRating: (serviceId: number, sessionId: number, turnIndex: number) =>
+    apiFetch<void>(`/services/${serviceId}/sessions/${sessionId}/turns/${turnIndex}/feedback`, { method: "DELETE" }),
   remove: (serviceId: number, sessionId: number) =>
     apiFetch<void>(`/services/${serviceId}/sessions/${sessionId}`, { method: "DELETE" }),
   chat: (serviceId: number, sessionId: number, message: string, topK?: number, signal?: AbortSignal, retrievalMode?: RetrievalMode) =>
