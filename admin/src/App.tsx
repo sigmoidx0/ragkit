@@ -1,21 +1,21 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { Toaster } from "sonner";
 import Layout from "./components/Layout";
-import { RequireAuth, RequireServiceAdmin } from "./auth/guards";
-import { ServiceProvider } from "./services/ServiceProvider";
+import { RequireAuth, RequireWorkspaceAdmin } from "./auth/guards";
+import { WorkspaceProvider } from "./workspace/WorkspaceProvider";
 import LoginPage from "./pages/LoginPage";
+import AgentHomePage from "./pages/AgentHomePage";
+import ChatPage from "./pages/ChatPage";
 import DocumentsPage from "./pages/DocumentsPage";
 import DocumentDetailPage from "./pages/DocumentDetailPage";
-import SearchPage from "./pages/SearchPage";
-import ServicesPage from "./pages/ServicesPage";
+import DocumentSetsPage from "./pages/DocumentSetsPage";
+import AgentSettingsPage from "./pages/AgentSettingsPage";
+import RetrievalLabPage from "./pages/RetrievalLabPage";
+import EvalPage from "./pages/EvalPage";
+import McpServersPage from "./pages/McpServersPage";
 import MembersPage from "./pages/MembersPage";
 import UsersPage from "./pages/UsersPage";
-import PlaygroundPage from "./pages/PlaygroundPage";
-import PipelineBuilderPage from "./pages/PipelineBuilderPage";
-import ChatPage from "./pages/ChatPage";
-import AgentHomePage from "./pages/AgentHomePage";
-import AgentSettingsPage from "./pages/AgentSettingsPage";
-import EvalPage from "./pages/EvalPage";
+import WorkspacesPage from "./pages/WorkspacesPage";
 
 export default function App() {
   return (
@@ -26,24 +26,34 @@ export default function App() {
       <Route
         element={
           <RequireAuth>
-            <ServiceProvider>
+            <WorkspaceProvider>
               <Layout />
-            </ServiceProvider>
+            </WorkspaceProvider>
           </RequireAuth>
         }
       >
+        {/* Use */}
         <Route index element={<AgentHomePage />} />
+        <Route path="/chat" element={<ChatPage />} />
+        {/* Knowledge */}
         <Route path="/documents" element={<DocumentsPage />} />
         <Route path="/documents/:id" element={<DocumentDetailPage />} />
-        <Route path="/search" element={<SearchPage />} />
-        <Route path="/services" element={<ServicesPage />} />
-        <Route path="/members" element={<MembersPage />} />
+        <Route path="/document-sets" element={<DocumentSetsPage />} />
+        {/* Build */}
+        <Route path="/agent-settings" element={<RequireWorkspaceAdmin><AgentSettingsPage /></RequireWorkspaceAdmin>} />
+        <Route path="/lab" element={<Navigate to="/lab/search" replace />} />
+        <Route path="/lab/:tab" element={<RetrievalLabPage />} />
+        <Route path="/evals" element={<RequireWorkspaceAdmin><EvalPage /></RequireWorkspaceAdmin>} />
+        <Route path="/mcp" element={<RequireWorkspaceAdmin><McpServersPage /></RequireWorkspaceAdmin>} />
+        {/* Admin */}
+        <Route path="/members" element={<RequireWorkspaceAdmin><MembersPage /></RequireWorkspaceAdmin>} />
         <Route path="/users" element={<UsersPage />} />
-        <Route path="/playground" element={<RequireServiceAdmin><PlaygroundPage /></RequireServiceAdmin>} />
-        <Route path="/pipeline" element={<PipelineBuilderPage />} />
-        <Route path="/chat" element={<ChatPage />} />
-        <Route path="/evals" element={<RequireServiceAdmin><EvalPage /></RequireServiceAdmin>} />
-        <Route path="/agent-settings" element={<RequireServiceAdmin><AgentSettingsPage /></RequireServiceAdmin>} />
+        <Route path="/workspaces" element={<WorkspacesPage />} />
+        {/* Old addresses, kept so bookmarks still land somewhere sensible */}
+        <Route path="/search" element={<Navigate to="/lab/search" replace />} />
+        <Route path="/pipeline" element={<Navigate to="/lab/pipelines" replace />} />
+        <Route path="/playground" element={<Navigate to="/lab/chunking" replace />} />
+        <Route path="/services" element={<Navigate to="/workspaces" replace />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

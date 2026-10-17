@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Annotated
+from dataclasses import dataclass
+from typing import Annotated, Any
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
@@ -32,7 +33,7 @@ _RETRIEVAL_ROLE = """\
 You are a retrieval specialist. The user's question arrives with context from an
 initial document search, inside <retrieved_context> tags.
 Never answer from your own knowledge or memory.
-1. Answer based solely on the retrieved context, citing sources inline using [N] notation.
+1. Answer based solely on the retrieved context, citing each fact with its passage number, like [1] or [2][3].
 2. Only if that context is insufficient, call the retrieval tool with a different, more specific query.
 If the documents do not contain enough information, say so clearly.
 """ + _LANGUAGE_RULE
@@ -43,7 +44,7 @@ initial document search, inside <retrieved_context> tags.
 Never answer from your own knowledge or memory.
 1. If the context misses parts of the topic, call the retrieval tool with other angles of it.
 2. Write a comprehensive, well-structured summary with clear sections and bullet points,
-   citing sources inline using [N] notation.
+   citing each fact with its passage number, like [1] or [2][3].
 If the documents do not contain enough information, say so clearly.
 """ + _LANGUAGE_RULE
 
@@ -75,25 +76,36 @@ def _delegation_prompt(tools: list[BaseTool]) -> str:
         "When the question belongs to one of their domains, or the user asks you to consult one, "
         "call that tool yourself and answer from its reply. Never tell the user to ask another agent, "
         "and never say you will ask one without calling the tool in the same turn. "
-        "Never mention tool names to the user — refer to the other agent by its name."
+        "Never mention tool names to the user — refer to the other agent by its name. "
+        "Its reply cites passages with numbers like [4], counted alongside your own search results; "
+        "keep those exact numbers on the facts you take from it."
     )
 
 
-def _make_agent(llm: BaseChatModel, tools: list[BaseTool], role_prompt: str, base_system_prompt: str):
+@dataclass(frozen=True)
+class Specialist:
+    agent: Any  # the compiled ReAct agent
+    # Its full system prompt, kept so a final answer can be written without the
+    # agent when it runs out of tool calls (see graph._answer_within_budget).
+    system_prompt: str
+
+
+def _make_agent(llm: BaseChatModel, tools: list[BaseTool], role_prompt: str, base_system_prompt: str) -> Specialist:
     system_prompt = f"{base_system_prompt}\n\n{role_prompt}{_delegation_prompt(tools)}"
-    return create_react_agent(
+    agent = create_react_agent(
         llm,
         tools,
         prompt=SystemMessage(content=system_prompt),
         post_model_hook=make_tool_call_recovery_hook({t.name for t in tools}),
     )
+    return Specialist(agent, system_prompt)
 
 
-def make_retrieval_agent(llm: BaseChatModel, tools: list[BaseTool], base_system_prompt: str):
+def make_retrieval_agent(llm: BaseChatModel, tools: list[BaseTool], base_system_prompt: str) -> Specialist:
     return _make_agent(llm, tools, _RETRIEVAL_ROLE, base_system_prompt)
 
 
-def make_summary_agent(llm: BaseChatModel, tools: list[BaseTool], base_system_prompt: str):
+def make_summary_agent(llm: BaseChatModel, tools: list[BaseTool], base_system_prompt: str) -> Specialist:
     return _make_agent(llm, tools, _SUMMARY_ROLE, base_system_prompt)
 
 
@@ -103,6 +115,7 @@ class _ComparisonPlan(BaseModel):
 
 class _ComparisonState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
+    query: str  # the question rewritten to stand alone (see app/agent/context.py)
     queries: list[str]
     contexts: list[str]
 
@@ -112,10 +125,9 @@ def make_comparison_agent(llm: BaseChatModel, retrieval_tool: BaseTool, base_sys
 
     async def plan(state: _ComparisonState) -> dict:
         planner = llm.with_structured_output(_ComparisonPlan).with_config(tags=[INTERNAL_LLM_TAG])
-        user_msgs = [m for m in state["messages"] if isinstance(m, HumanMessage)]
         result = await planner.ainvoke([
             SystemMessage(content="Generate one focused search query per item being compared."),
-            user_msgs[-1],
+            HumanMessage(content=state["query"]),
         ])
         return {"queries": result.queries}
 
@@ -152,10 +164,13 @@ You are a helpful assistant. Answer the user's question directly using your own 
 """ + _LANGUAGE_RULE
 
 
-def make_direct_agent(llm: BaseChatModel, base_system_prompt: str):
+def make_direct_agent(llm: BaseChatModel, base_system_prompt: str, tools: list[BaseTool] | None = None):
+    """No document lookup — but an agent's MCP tools still reach external systems from here."""
     system_prompt = f"{base_system_prompt}\n\n{_DIRECT_ROLE}"
+    tools = tools or []
     return create_react_agent(
         llm,
-        [],
+        tools,
         prompt=SystemMessage(content=system_prompt),
+        post_model_hook=make_tool_call_recovery_hook({t.name for t in tools}) if tools else None,
     )

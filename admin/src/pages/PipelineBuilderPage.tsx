@@ -32,7 +32,8 @@ import { NodePalette } from "@/components/pipeline/NodePalette";
 import { RunResultsDrawer } from "@/components/pipeline/RunResultsDrawer";
 import { NODE_TYPES } from "@/components/pipeline/pipelineNodes";
 import { Button, Input } from "@/components/ui";
-import { useService } from "@/services/ServiceProvider";
+import { isSubmitEnter } from "@/lib/keys";
+import { useWorkspace } from "@/workspace/WorkspaceProvider";
 
 // Node handle type maps derived from the node definitions
 const NODE_OUTPUT_HANDLE_TYPES: Record<string, Record<string, string>> = {
@@ -129,8 +130,8 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 export default function PipelineBuilderPage() {
-  const { current: service } = useService();
-  const isAdmin = service?.role === "admin";
+  const { workspace } = useWorkspace();
+  const isAdmin = workspace?.role === "admin";
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
@@ -153,21 +154,21 @@ export default function PipelineBuilderPage() {
     queryKey: ["pipeline-schema"],
     queryFn: PipelineApi.schema,
     staleTime: Infinity,
-    enabled: !!service,
+    enabled: !!workspace,
   });
 
   const { data: nodeModels = {} as NodeModels } = useQuery({
     queryKey: ["pipeline-node-models"],
     queryFn: PipelineApi.nodeModels,
     staleTime: Infinity,
-    enabled: !!service,
+    enabled: !!workspace,
   });
 
   // Pipelines list
   const { data: pipelines = [], refetch: refetchPipelines } = useQuery({
-    queryKey: ["pipelines", service?.id],
-    queryFn: () => PipelineApi.list(service!.id),
-    enabled: !!service,
+    queryKey: ["pipelines", workspace?.id],
+    queryFn: () => PipelineApi.list(workspace!.id),
+    enabled: !!workspace,
   });
 
   // System default graph (shown when no active pipeline exists)
@@ -175,18 +176,18 @@ export default function PipelineBuilderPage() {
     queryKey: ["pipeline-default"],
     queryFn: PipelineApi.defaultGraph,
     staleTime: Infinity,
-    enabled: !!service,
+    enabled: !!workspace,
   });
 
   // Save mutation
   const saveMutation = useMutation({
     mutationFn: async () => {
-      if (!service) throw new Error("No agent selected");
+      if (!workspace) throw new Error("No agent selected");
       const graph = flowToGraph(nodes, edges);
       if (activePipelineId != null) {
-        return PipelineApi.update(service.id, activePipelineId, { name: pipelineName, graph_json: graph });
+        return PipelineApi.update(workspace.id, activePipelineId, { name: pipelineName, graph_json: graph });
       }
-      return PipelineApi.create(service.id, { name: pipelineName, graph_json: graph });
+      return PipelineApi.create(workspace.id, { name: pipelineName, graph_json: graph });
     },
     onSuccess: (saved: Pipeline) => {
       setActivePipelineId(saved.id);
@@ -203,8 +204,8 @@ export default function PipelineBuilderPage() {
 
   const deleteMutation = useMutation({
     mutationFn: () => {
-      if (!service || activePipelineId == null) throw new Error("No pipeline selected");
-      return PipelineApi.remove(service.id, activePipelineId);
+      if (!workspace || activePipelineId == null) throw new Error("No pipeline selected");
+      return PipelineApi.remove(workspace.id, activePipelineId);
     },
     onSuccess: () => {
       newPipeline();
@@ -218,8 +219,8 @@ export default function PipelineBuilderPage() {
 
   const statusMutation = useMutation({
     mutationFn: (newStatus: PipelineStatus) => {
-      if (!service || activePipelineId == null) throw new Error("No pipeline selected");
-      return PipelineApi.setStatus(service.id, activePipelineId, newStatus);
+      if (!workspace || activePipelineId == null) throw new Error("No pipeline selected");
+      return PipelineApi.setStatus(workspace.id, activePipelineId, newStatus);
     },
     onSuccess: (updated: Pipeline) => {
       setActivePipelineStatus(updated.status);
@@ -235,10 +236,10 @@ export default function PipelineBuilderPage() {
   });
 
   const handleRun = useCallback(async () => {
-    if (!service || activePipelineId == null || !query.trim()) return;
+    if (!workspace || activePipelineId == null || !query.trim()) return;
     try {
       setRunPhase("checking");
-      const readiness = await PipelineApi.readiness(service.id, activePipelineId);
+      const readiness = await PipelineApi.readiness(workspace.id, activePipelineId);
 
       if (!readiness.ready) {
         const cold = Object.entries(readiness.components)
@@ -246,11 +247,11 @@ export default function PipelineBuilderPage() {
           .map(([name]) => COMPONENT_LABELS[name] ?? name);
         setPreparingLabels(cold);
         setRunPhase("preparing");
-        await PipelineApi.prepare(service.id, activePipelineId);
+        await PipelineApi.prepare(workspace.id, activePipelineId);
       }
 
       setRunPhase("running");
-      const result = await PipelineApi.run(service.id, activePipelineId, { query, top_k: topK });
+      const result = await PipelineApi.run(workspace.id, activePipelineId, { query, top_k: topK });
       setRunResult(result);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Run failed");
@@ -258,7 +259,7 @@ export default function PipelineBuilderPage() {
       setRunPhase("idle");
       setPreparingLabels([]);
     }
-  }, [service, activePipelineId, query, topK]);
+  }, [workspace, activePipelineId, query, topK]);
 
   // Connection validation: only allow same handle_type
   const isValidConnection: IsValidConnection = useCallback(
@@ -487,7 +488,7 @@ export default function PipelineBuilderPage() {
           onChange={(e) => setQuery(e.target.value)}
           className="w-56 text-sm py-1.5"
           placeholder="Run query…"
-          onKeyDown={(e) => { if (e.key === "Enter") void handleRun(); }}
+          onKeyDown={(e) => { if (isSubmitEnter(e)) void handleRun(); }}
         />
         <Input
           type="number"

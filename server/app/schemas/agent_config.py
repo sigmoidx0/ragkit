@@ -1,6 +1,6 @@
-"""Per-agent configuration, stored as JSON on `services.agent_config`.
+"""Per-agent configuration, stored as JSON on `agents.agent_config`.
 
-A Service is presented as an Agent in the UI. Everything a user can tune about
+Everything a user can tune about
 how that agent answers lives here: its card on the landing page, which model it
 runs on, how it retrieves, and which routes its supervisor may pick. API keys
 never live here — they stay in environment variables (see app/agent/config.py).
@@ -43,6 +43,18 @@ class AgentLlmConfig(BaseModel):
     temperature: float | None = Field(default=None, ge=0.0, le=2.0)
 
 
+McpApproval = Literal["auto", "required"]
+
+
+class McpToolRef(BaseModel):
+    server_id: int
+    tool: str = Field(min_length=1, max_length=255)
+    # "required" pauses the run until the user approves this call. Such tools
+    # are left out where a run can't pause: stateless chat, evaluations, and
+    # runs as a delegate.
+    approval: McpApproval = "required"
+
+
 class AgentConfig(BaseModel):
     # ── Presentation: what the landing card and chat header show ──
     description: str = Field(default="", max_length=500)
@@ -56,6 +68,9 @@ class AgentConfig(BaseModel):
     llm: AgentLlmConfig = Field(default_factory=AgentLlmConfig)
 
     # ── Retrieval ──
+    # Document sets to search, from the agent's workspace. Empty searches
+    # nothing; sets that no longer exist are ignored.
+    document_set_ids: list[int] = Field(default_factory=list, max_length=50)
     # None uses the built-in search chain; otherwise an *active* pipeline built
     # in the Pipeline Builder for this agent.
     pipeline_id: int | None = None
@@ -69,6 +84,11 @@ class AgentConfig(BaseModel):
     # Other agents this one may consult as tools (one level deep; see
     # app/agent/delegation.py). Ignored for any the chatting user can't access.
     delegates: list[int] = Field(default_factory=list, max_length=5)
+
+    # ── MCP tools ──
+    # Tools from the workspace's MCP servers this agent may call, each either
+    # run straight away or only after the chatting user approves it.
+    mcp_tools: list[McpToolRef] = Field(default_factory=list, max_length=50)
 
     # ── Router ──
     # validate_default so an agent with no stored config still gets all four

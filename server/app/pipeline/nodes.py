@@ -85,8 +85,9 @@ class _RetrieveNodeExecutor:
         hits = get_vectorstore().search(
             vector=inputs["vector"],
             top_k=fetch_k,
-            service_id=ctx.service_id,
+            workspace_id=ctx.workspace_id,
             document_id=config.get("document_id"),
+            document_ids=ctx.document_ids,
             query_text=inputs["query"],
         )
         return {"hits": hits}

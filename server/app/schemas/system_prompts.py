@@ -19,7 +19,7 @@ class SystemPromptOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    service_id: int
+    agent_id: int
     name: str
     content: str
     is_active: bool

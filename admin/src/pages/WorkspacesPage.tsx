@@ -1,46 +1,46 @@
 import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ServicesApi } from "@/api/endpoints";
+import { WorkspacesApi } from "@/api/endpoints";
 import { Button, Card, FormField, Input, SectionHeading } from "@/components/ui";
 import { DataTable, type Column } from "@/components/DataTable";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { useService } from "@/services/ServiceProvider";
-import type { Service } from "@/api/types";
+import { useWorkspace } from "@/workspace/WorkspaceProvider";
+import type { Workspace } from "@/api/types";
 
-export default function ServicesPage() {
+export default function WorkspacesPage() {
   const qc = useQueryClient();
-  const { refresh: refreshServiceContext } = useService();
+  const { refresh: refreshWorkspaces } = useWorkspace();
 
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
-  const [confirmDelete, setConfirmDelete] = useState<Service | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<Workspace | null>(null);
 
   const listQuery = useQuery({
-    queryKey: ["services-all"],
-    queryFn: () => ServicesApi.listAll(),
+    queryKey: ["workspaces-all"],
+    queryFn: () => WorkspacesApi.listAll(),
   });
 
   const createMutation = useMutation({
-    mutationFn: () => ServicesApi.create(name, slug),
+    mutationFn: () => WorkspacesApi.create(name, slug),
     onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: ["services-all"] });
-      await refreshServiceContext();
+      await qc.invalidateQueries({ queryKey: ["workspaces-all"] });
+      await refreshWorkspaces();
       setName("");
       setSlug("");
-      toast.success("Agent created");
+      toast.success("Workspace created");
     },
-    onError: (err) => toast.error(err instanceof Error ? err.message : "Failed to create agent"),
+    onError: (err) => toast.error(err instanceof Error ? err.message : "Failed to create workspace"),
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (serviceId: number) => ServicesApi.remove(serviceId),
+    mutationFn: (workspaceId: number) => WorkspacesApi.remove(workspaceId),
     onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: ["services-all"] });
-      await refreshServiceContext();
-      toast.success("Agent deleted");
+      await qc.invalidateQueries({ queryKey: ["workspaces-all"] });
+      await refreshWorkspaces();
+      toast.success("Workspace deleted");
     },
-    onError: (err) => toast.error(err instanceof Error ? err.message : "Failed to delete agent"),
+    onError: (err) => toast.error(err instanceof Error ? err.message : "Failed to delete workspace"),
   });
 
   const onSubmit = (e: FormEvent) => {
@@ -49,9 +49,9 @@ export default function ServicesPage() {
     createMutation.mutate();
   };
 
-  const services = listQuery.data ?? [];
+  const workspaces = listQuery.data ?? [];
 
-  const SERVICE_COLUMNS: Column<Service>[] = [
+  const SERVICE_COLUMNS: Column<Workspace>[] = [
     { header: "Name", render: (s) => <span className="font-medium text-[#2D3748] dark:text-gray-100">{s.name}</span> },
     { header: "Slug", render: (s) => <span className="font-mono text-[#A0AEC0]">{s.slug}</span> },
     {
@@ -78,7 +78,7 @@ export default function ServicesPage() {
     <div className="space-y-6">
       <ConfirmDialog
         open={confirmDelete != null}
-        title="Delete agent?"
+        title="Delete workspace?"
         confirmLabel="Delete"
         onConfirm={() => {
           if (confirmDelete) deleteMutation.mutate(confirmDelete.id);
@@ -86,17 +86,17 @@ export default function ServicesPage() {
         }}
         onCancel={() => setConfirmDelete(null)}
       >
-        Delete <strong>{confirmDelete?.name}</strong>? This cannot be undone.
+        Delete <strong>{confirmDelete?.name}</strong> with its agents, documents and chats? This cannot be undone.
       </ConfirmDialog>
       <Card className="p-5">
-        <SectionHeading className="mb-3">New Agent</SectionHeading>
+        <SectionHeading className="mb-3">New Workspace</SectionHeading>
         <form onSubmit={onSubmit} className="grid gap-4 md:grid-cols-2">
           <FormField label="Name" htmlFor="svc-name">
             <Input
               id="svc-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="My Agent"
+              placeholder="My Workspace"
               required
             />
           </FormField>
@@ -105,7 +105,7 @@ export default function ServicesPage() {
               id="svc-slug"
               value={slug}
               onChange={(e) => setSlug(e.target.value)}
-              placeholder="my-agent"
+              placeholder="my-workspace"
               required
             />
           </FormField>
@@ -118,12 +118,12 @@ export default function ServicesPage() {
       </Card>
 
       <Card>
-        <DataTable<Service>
+        <DataTable<Workspace>
           columns={SERVICE_COLUMNS}
-          rows={services}
+          rows={workspaces}
           rowKey={(s) => s.id}
           isLoading={listQuery.isLoading}
-          emptyMessage="No agents yet."
+          emptyMessage="No workspaces yet."
         />
       </Card>
     </div>

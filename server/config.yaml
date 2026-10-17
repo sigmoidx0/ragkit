@@ -130,6 +130,18 @@ agent:
   # Hard ceiling on tool-call rounds per sub-agent before it must answer.
   # Caps cost and stops a model that keeps retrieving instead of responding.
   max_iterations: 5
+  # Long chats are compressed: when the history not yet summarized passes this
+  # many (approximate) tokens, its older messages are folded into a running
+  # summary. The full history stays stored; only what the model sees shrinks.
+  history_max_tokens: 3000
+  # Newest messages always sent verbatim, never summarized (2 = one Q&A pair).
+  history_keep_messages: 4
+  # Temperature for a regenerated answer (Regenerate in the chat). At 0.0 the
+  # same answer would come back word for word. Applied only to the model that
+  # writes the answer — the query rewrite and routing stay deterministic, so the
+  # same documents are found — and never lowers an agent's own temperature.
+  # Keep it modest: higher values drift from the retrieved passages.
+  regenerate_temperature: 0.5
 
 chat:
   enabled: true

@@ -17,7 +17,7 @@ export const ACCENT_THEMES: Record<AgentAccent, Omit<AgentTheme, "icon">> = {
 };
 
 /** Guess a theme from the agent's name — used until someone picks one. */
-function themeFromName(name: string, slug: string): AgentTheme {
+function themeFromName(name: string, slug = ""): AgentTheme {
   const key = `${slug} ${name}`.toLowerCase();
   if (/legal|법|law/.test(key)) return { icon: "⚖️", ...ACCENT_THEMES.blue };
   if (/medical|의|health|병원|clinic/.test(key))
@@ -27,10 +27,13 @@ function themeFromName(name: string, slug: string): AgentTheme {
   return { icon: "🤖", ...ACCENT_THEMES.teal };
 }
 
-/** The agent's theme: its chosen icon and accent, falling back to the name. */
+/**
+ * An agent's (or workspace's) theme: the chosen icon and accent, falling back
+ * to a guess from the name. Workspaces have no settings, so they always guess.
+ */
 export function getAgentTheme(agent: {
   name: string;
-  slug: string;
+  slug?: string;
   agent_config?: Pick<AgentConfig, "icon" | "accent"> | null;
 }): AgentTheme {
   const fallback = themeFromName(agent.name, agent.slug);

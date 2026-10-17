@@ -30,8 +30,8 @@ function plainSnippet(text: string): string {
  */
 export function CitedMarkdown({ content, sources }: { content: string; sources: SourceItem[] }) {
   const navigate = useNavigate();
-  // The first search (the seeded one) is what most citations refer to, so the
-  // first source carrying an index wins when later searches reuse it.
+  // The server numbers a turn's searches as one sequence, so an index names one
+  // passage; a repeat is that same passage found again by another search.
   const byIndex = new Map<number, SourceItem>();
   for (const s of sources) if (!byIndex.has(s.index)) byIndex.set(s.index, s);
 

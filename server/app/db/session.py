@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from pathlib import Path
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import get_settings
@@ -28,7 +28,17 @@ def _make_engine():
                 url = f"{prefix}{resolved}"
         connect_args["check_same_thread"] = False
 
-    return create_engine(url, connect_args=connect_args, pool_pre_ping=True, future=True)
+    engine = create_engine(url, connect_args=connect_args, pool_pre_ping=True, future=True)
+    if url.startswith("sqlite"):
+        # SQLite ignores foreign keys unless asked, per connection — so every
+        # ON DELETE CASCADE in the schema was a no-op and deleting a chat left
+        # its sources and ratings behind. Alembic uses its own engine, which
+        # keeps them off: table rebuilds in migrations must not cascade.
+        @event.listens_for(engine, "connect")
+        def _enable_foreign_keys(dbapi_conn, _record) -> None:
+            dbapi_conn.execute("PRAGMA foreign_keys = ON")
+
+    return engine
 
 
 engine = _make_engine()

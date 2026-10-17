@@ -34,6 +34,15 @@ def session_turns(messages: Sequence[BaseMessage]) -> list[Turn]:
     return turns
 
 
+SESSION_TITLE_MAX = 40
+
+
+def title_from_message(message: str) -> str:
+    """A session's title: its first question, on one line, cut to a readable length."""
+    text = " ".join(message.split())
+    return text if len(text) <= SESSION_TITLE_MAX else text[: SESSION_TITLE_MAX - 1].rstrip() + "…"
+
+
 def count_answers(messages: Sequence[BaseMessage]) -> int:
     """How many answers the session already has — the index the next one gets."""
     return sum(1 for t in session_turns(messages) if t.role == "assistant")

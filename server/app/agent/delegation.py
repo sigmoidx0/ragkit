@@ -16,6 +16,10 @@ Three rules keep this safe and legible:
 - Membership still applies. A user only gets the delegates they could chat with
   directly, so delegation never widens what documents someone can reach.
 
+Citations survive the hop. The delegate's sources are renumbered into the
+caller's sequence (one CitationNumbering per turn) and its [N] markers rewritten
+to match, so facts that came from another agent stay cited in the final answer.
+
 The delegate runs in a fresh context so its internal LangGraph events don't leak
 into the caller's stream (where its "retrieval_agent" would light up the
 caller's node of the same name). Its progress is relayed instead as custom
@@ -37,14 +41,16 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.agent.config import load_agent_config, load_system_prompt
-from app.db.models import Service, ServiceMembership, SuperAdmin
+from app.db.models import Agent, SuperAdmin, WorkspaceMembership
+from app.rag.citation import CitationNumbering
+from app.schemas.chat import SourceItem
 
 DELEGATE_TOOL_PREFIX = "ask_agent_"
 # Custom event names relayed to the caller's stream (see executor).
 DELEGATE_NODE_EVENT = "delegate_node"
 DELEGATE_SOURCES_EVENT = "delegate_sources"
 
-_CITATION = re.compile(r"\s?\[\d+\]")
+_CITATION = re.compile(r"(\s?)\[(\d+)\]")
 
 
 @dataclass(frozen=True)
@@ -62,26 +68,30 @@ def delegate_tool_name(agent_id: int) -> str:
     return f"{DELEGATE_TOOL_PREFIX}{agent_id}"
 
 
-def _accessible_agent_ids(db: Session, user_id: int) -> set[int] | None:
-    """Agents this user may chat with; None means all (superadmin)."""
+def _accessible_workspace_ids(db: Session, user_id: int) -> set[int] | None:
+    """Workspaces this user belongs to; None means all (superadmin)."""
     if db.get(SuperAdmin, user_id) is not None:
         return None
     return set(
-        db.execute(select(ServiceMembership.service_id).where(ServiceMembership.user_id == user_id)).scalars()
+        db.execute(
+            select(WorkspaceMembership.workspace_id).where(WorkspaceMembership.user_id == user_id)
+        ).scalars()
     )
 
 
-def resolve_delegates(db: Session, own_id: int, delegate_ids: list[int], user_id: int | None) -> list[Service]:
-    """The configured delegates this user may actually reach, in config order."""
-    allowed = _accessible_agent_ids(db, user_id) if user_id is not None else set()
-    services = []
+def resolve_delegates(db: Session, own_id: int, delegate_ids: list[int], user_id: int | None) -> list[Agent]:
+    """The configured delegates this user may actually reach, in config order.
+
+    A delegate can live in another workspace, but only one the user is a member
+    of — delegation never reaches documents the user couldn't open directly.
+    """
+    allowed = _accessible_workspace_ids(db, user_id) if user_id is not None else set()
+    agents = []
     for agent_id in delegate_ids:
-        if agent_id == own_id or (allowed is not None and agent_id not in allowed):
-            continue
-        service = db.get(Service, agent_id)
-        if service is not None:
-            services.append(service)
-    return services
+        agent = db.get(Agent, agent_id) if agent_id != own_id else None
+        if agent is not None and (allowed is None or agent.workspace_id in allowed):
+            agents.append(agent)
+    return agents
 
 
 def _final_answer(output: dict | None) -> str:
@@ -90,19 +100,44 @@ def _final_answer(output: dict | None) -> str:
     return str(ai[-1].content) if ai else ""
 
 
-def make_delegate_tool(db: Session, service: Service) -> tuple[BaseTool, DelegateInfo]:
+def renumber_sources(
+    found: list[SourceItem], answer: str, numbering: CitationNumbering
+) -> tuple[list[SourceItem], str]:
+    """Move a delegate's sources and [N] markers into the caller's numbering.
+
+    A marker naming no source the delegate found is dropped rather than left
+    pointing at whatever the caller's source of that number happens to be.
+    """
+    mapping: dict[int, int] = {}
+    renumbered: dict[int, SourceItem] = {}
+    for s in found:
+        n = numbering.number(s.document_id, s.snippet)
+        mapping[s.index] = n
+        renumbered.setdefault(n, s.model_copy(update={"index": n}))
+
+    def swap(match: re.Match) -> str:
+        n = mapping.get(int(match.group(2)))
+        return f"{match.group(1)}[{n}]" if n is not None else ""
+
+    return list(renumbered.values()), _CITATION.sub(swap, answer)
+
+
+def make_delegate_tool(
+    db: Session, agent: Agent, sources_store: dict[str, list[SourceItem]], numbering: CitationNumbering
+) -> tuple[BaseTool, DelegateInfo]:
+    """`sources_store` and `numbering` are the calling turn's (see graph.build_multi_agent_graph)."""
     from app.agent.graph import build_multi_agent_graph, graph_node_ids  # graph imports this module
 
-    agent_cfg = load_agent_config(service)
-    info = DelegateInfo(agent_id=service.id, name=service.name, tool_name=delegate_tool_name(service.id))
+    agent_cfg = load_agent_config(agent)
+    info = DelegateInfo(agent_id=agent.id, name=agent.name, tool_name=delegate_tool_name(agent.id))
     about = agent_cfg.description or "answers from its own document collection"
 
     async def ask(question: str, config: RunnableConfig) -> str:
         built = build_multi_agent_graph(
             db,
-            service.id,
+            agent,
             agent_cfg,
-            load_system_prompt(db, service.id),
+            load_system_prompt(db, agent.id),
             retrieval_mode="on",
             allow_delegates=False,
         )
@@ -131,22 +166,23 @@ def make_delegate_tool(db: Session, service: Service) -> tuple[BaseTool, Delegat
             await adispatch_custom_event(DELEGATE_NODE_EVENT, {"delegate": info.node_id, **step}, config=config)
         answer = await task
 
-        sources = [s.model_dump() for found in built.sources_store.values() for s in found]
+        found = [s for sources in built.sources_store.values() for s in sources]
+        sources, answer = renumber_sources(found, answer, numbering)
+        # Stored with the caller's own searches, so they're saved with the turn
+        # and graded by evals like any other source of the answer.
+        sources_store[f"{info.tool_name}:{question}"] = sources
         await adispatch_custom_event(
             DELEGATE_SOURCES_EVENT,
-            {"delegate": info.node_id, "tool": info.tool_name, "sources": sources},
+            {"delegate": info.node_id, "tool": info.tool_name, "sources": [s.model_dump() for s in sources]},
             config=config,
         )
-        # The delegate's [N] markers point at its own sources, which the caller
-        # never sees — strip them so they can't be confused with the caller's.
-        cleaned = _CITATION.sub("", answer).strip() or "(no answer)"
-        return f"Answer from the {service.name} agent:\n{cleaned}"
+        return f"Answer from the {agent.name} agent:\n{answer.strip() or '(no answer)'}"
 
     tool = StructuredTool.from_function(
         coroutine=ask,
         name=info.tool_name,
         description=(
-            f"Ask the '{service.name}' agent, which {about}. "
+            f"Ask the '{agent.name}' agent, which {about}. "
             "Use it for questions about that domain that your own documents don't cover. "
             "Pass a self-contained question."
         ),

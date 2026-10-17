@@ -73,9 +73,10 @@ export interface ChunkPreviewResponse {
   total_chunks: number;
 }
 
-export type ServiceRole = "admin" | "member" | "viewer";
+export type WorkspaceRole = "admin" | "member" | "viewer";
 
-export interface Service {
+/** The tenant: members, documents, document sets and pipelines live here. */
+export interface Workspace {
   id: number;
   name: string;
   slug: string;
@@ -83,11 +84,24 @@ export interface Service {
   updated_at: string;
 }
 
-export interface ServiceWithRole extends Service {
-  role: ServiceRole;
+export interface WorkspaceWithRole extends Workspace {
+  role: WorkspaceRole;
 }
 
-// ── Agent configuration (a Service is presented as an Agent) ──────────────────
+/** A named group of a workspace's documents; agents choose which sets to search. */
+export interface DocumentSet {
+  id: number;
+  workspace_id: number;
+  name: string;
+  description: string | null;
+  document_ids: number[];
+  /** Agents in the workspace that search this set. */
+  used_by: { id: number; name: string }[];
+  created_at: string;
+  updated_at: string;
+}
+
+// ── Agents ────────────────────────────────────────────────────────────────────
 
 export type LlmProvider = "openai" | "anthropic" | "google" | "ollama" | "vllm";
 export type AgentRouteName = "retrieval" | "summary" | "comparison" | "direct";
@@ -106,6 +120,8 @@ export interface AgentConfig {
   starter_questions: string[];
   /** Each null field inherits config.yaml. */
   llm: { provider: LlmProvider | null; model: string | null; temperature: number | null };
+  /** Document sets to search; empty = every document in the workspace. */
+  document_set_ids: number[];
   /** null = built-in search chain. */
   pipeline_id: number | null;
   top_k: number | null;
@@ -113,12 +129,27 @@ export interface AgentConfig {
   default_retrieval_mode: RetrievalMode;
   /** Other agents this one may consult as tools. */
   delegates: number[];
+  /** Tools from the workspace's MCP servers; "required" pauses for the user's approval. */
+  mcp_tools: McpToolRef[];
   routes: Record<AgentRouteName, AgentRouteConfig>;
 }
 
 /** One agent as the landing page and the rest of the app see it. */
-export interface AgentCard extends ServiceWithRole {
+export interface AgentSummary {
+  id: number;
+  workspace_id: number;
+  name: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** One agent as the landing page and the rest of the app see it. */
+export interface AgentCard extends AgentSummary {
+  workspace_name: string;
+  /** The user's role in the agent's workspace. */
+  role: WorkspaceRole;
   agent_config: AgentConfig;
+  /** Documents the agent can search (its document sets, or the whole workspace). */
   document_count: number;
   /** Resolved "provider · model" after config.yaml defaults apply. */
   model_label: string;
@@ -131,17 +162,17 @@ export interface ProviderInfo {
   models: string[];
 }
 
-export interface ServiceMember {
+export interface WorkspaceMember {
   user_id: number;
-  service_id: number;
-  role: ServiceRole;
+  workspace_id: number;
+  role: WorkspaceRole;
   created_at: string;
   updated_at: string;
 }
 
 export interface DocumentSummary {
   id: number;
-  service_id: number;
+  workspace_id: number;
   title: string;
   description: string | null;
   source_filename: string;
@@ -214,7 +245,7 @@ export type PipelineStatus = "draft" | "active" | "archived";
 
 export interface Pipeline {
   id: number;
-  service_id: number;
+  workspace_id: number;
   name: string;
   status: PipelineStatus;
   graph_json: PipelineGraph;
@@ -263,7 +294,7 @@ export type NodeModels = Record<string, Record<string, string[]>>;
 
 export interface SystemPrompt {
   id: number;
-  service_id: number;
+  agent_id: number;
   name: string;
   content: string;
   is_active: boolean;
@@ -278,7 +309,7 @@ export interface SystemPrompt {
 
 export interface ChatSession {
   id: number;
-  service_id: number;
+  agent_id: number;
   title: string | null;
   created_at: string;
   updated_at: string;
@@ -309,6 +340,8 @@ export interface FeedbackItem {
   rating: Rating;
   comment: string | null;
   question: string;
+  /** The standalone rewrite of `question`, when the turn was logged. */
+  query: string | null;
   answer: string;
   created_at: string;
 }
@@ -317,6 +350,32 @@ export interface FeedbackOverview {
   up: number;
   down: number;
   items: FeedbackItem[];
+}
+
+/** A question the agent searched for but answered without citing anything. */
+export interface UnansweredItem {
+  session_id: number;
+  session_title: string | null;
+  user_email: string;
+  turn_index: number;
+  question: string;
+  query: string;
+  route: string | null;
+  source_count: number;
+  created_at: string;
+}
+
+export interface UnansweredOverview {
+  /** Logged turns that searched, and how many of those cited nothing. */
+  searched: number;
+  unanswered: number;
+  items: UnansweredItem[];
+}
+
+export interface RouteResult {
+  agent_id: number;
+  /** One sentence on why; empty when the workspace has a single agent. */
+  reason: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -355,7 +414,7 @@ export type RetrievalMode = "on" | "off" | "auto";
 export interface GraphNode {
   id: string;
   label: string;
-  kind: "entry" | "exit" | "supervisor" | "agent" | "delegate";
+  kind: "entry" | "exit" | "supervisor" | "agent" | "delegate" | "step" | "mcp";
 }
 
 export interface GraphEdge {
@@ -370,6 +429,12 @@ export interface GraphEdge {
 export interface GraphTopology {
   nodes: GraphNode[];
   edges: GraphEdge[];
+}
+
+/** Settings preview: the draft's graph, plus how many documents its sets cover. */
+export interface GraphPreview extends GraphTopology {
+  /** null = no sets selected, i.e. the whole workspace. */
+  document_count: number | null;
 }
 
 export type NodeStatus = "running" | "done";
@@ -389,6 +454,88 @@ export interface TraceSpan {
 /** Progress inside a delegate agent: its node id → (inner node → status). */
 export type DelegateStates = Record<string, Record<string, NodeStatus>>;
 
+// ── MCP ──────────────────────────────────────────────────────────────────────
+
+export type McpApproval = "auto" | "required";
+
+export interface McpToolRef {
+  server_id: number;
+  tool: string;
+  approval: McpApproval;
+}
+
+export interface McpToolSpec {
+  name: string;
+  title: string | null;
+  description: string;
+  input_schema: Record<string, unknown>;
+  read_only: boolean;
+  destructive: boolean;
+}
+
+export interface McpServer {
+  id: number;
+  workspace_id: number;
+  name: string;
+  description: string | null;
+  url: string;
+  auth_env_var: string | null;
+  /** Whether that variable is set on the ragkit server (never its value). */
+  auth_configured: boolean;
+  enabled: boolean;
+  tools: McpToolSpec[];
+  tools_refreshed_at: string | null;
+  last_error: string | null;
+  used_by: { id: number; name: string }[];
+}
+
+export interface McpServerInput {
+  name?: string;
+  url?: string;
+  description?: string | null;
+  auth_env_var?: string | null;
+  enabled?: boolean;
+}
+
+export type McpCallStatus = "auto" | "pending" | "approved" | "rejected" | "expired";
+
+export interface McpToolCall {
+  id: number;
+  agent_id: number;
+  agent_name: string;
+  session_id: number | null;
+  server_name: string;
+  tool: string;
+  args: Record<string, unknown>;
+  approved_args: Record<string, unknown> | null;
+  status: McpCallStatus;
+  requested_by: string | null;
+  decided_by: string | null;
+  decided_at: string | null;
+  result: string | null;
+  is_error: boolean;
+  created_at: string;
+}
+
+/** An MCP call made during a chat turn, as streamed. */
+export interface McpAction {
+  id: string;
+  server: string;
+  tool: string;
+  args: Record<string, unknown>;
+  status: "running" | "waiting" | "done" | "error";
+  output?: string | null;
+}
+
+/** A call the paused run waits on. */
+export interface PendingApproval {
+  call_id: number;
+  server: string;
+  tool: string;
+  title?: string | null;
+  args: Record<string, unknown>;
+}
+
 export interface ChatTurn {
   id: string;
   role: ChatRole;
@@ -401,6 +548,10 @@ export interface ChatTurn {
   /** Assistant turns: position among the session's answers, for rating it. */
   turnIndex?: number;
   feedback?: Feedback | null;
+  /** MCP tool calls in this turn. */
+  actions?: McpAction[];
+  /** Calls waiting for the user's approval; the turn continues once decided. */
+  approvals?: PendingApproval[];
 }
 
 // ── Evaluations ───────────────────────────────────────────────────────────────
@@ -451,7 +602,7 @@ export type EvalStatus = "pending" | "running" | "done" | "failed";
 
 export interface EvalRun {
   id: number;
-  service_id: number;
+  agent_id: number;
   name: string;
   status: EvalStatus;
   config_snapshot: AgentConfig;

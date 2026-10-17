@@ -27,3 +27,12 @@ def test_question_and_answer_pairs_each_answer_with_its_question() -> None:
     assert question_and_answer(HISTORY, 1) == ("파일 형식은?", "PDF입니다 [2]")
     assert question_and_answer(HISTORY, 0) == ("군휴학 절차?", "로그인 → 학적변동 → 휴학신청 [1]")
     assert question_and_answer(HISTORY, 2) is None
+
+
+def test_session_title_is_the_first_question_on_one_line() -> None:
+    from app.agent.history import title_from_message
+
+    assert title_from_message("  군휴학   신청\n절차 알려줘 ") == "군휴학 신청 절차 알려줘"
+    long = "재제조 스로틀바디 기밀성 시험 조건을 제조 에이전트에게 물어봐서 자세히 알려줘"
+    title = title_from_message(long)
+    assert len(title) == 40 and title.endswith("…") and long.startswith(title[:-1])

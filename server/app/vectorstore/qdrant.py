@@ -19,6 +19,9 @@ _DENSE = "dense"
 _SPARSE = "sparse"
 
 
+UPSERT_BATCH_SIZE = 256
+
+
 class QdrantStore:
     """Dense-only vector store backed by Qdrant."""
 
@@ -100,11 +103,15 @@ class QdrantStore:
     ) -> None:
         if not point_ids:
             return
-        self._client.upsert(
-            collection_name=self._collection,
-            points=self._build_points(point_ids, vectors, payloads),
-            wait=True,
-        )
+        points = self._build_points(point_ids, vectors, payloads)
+        # One request per batch: a large document in a single request can
+        # exceed the client's write timeout.
+        for start in range(0, len(points), UPSERT_BATCH_SIZE):
+            self._client.upsert(
+                collection_name=self._collection,
+                points=points[start : start + UPSERT_BATCH_SIZE],
+                wait=True,
+            )
 
     def delete_document(self, document_id: int) -> None:
         self._client.delete(
@@ -131,15 +138,27 @@ class QdrantStore:
         *,
         vector: list[float],
         top_k: int,
-        service_id: int | None = None,
+        workspace_id: int | None = None,
         document_id: int | None = None,
+        document_ids: list[int] | None = None,
         query_text: str | None = None,
     ) -> list[SearchHit]:
+        """Search, optionally narrowed to a workspace and to specific documents.
+
+        `document_ids` is how document sets reach the vector store: [] means
+        "nothing is in scope" and returns nothing, while None means no filter.
+        """
+        if document_ids is not None and not document_ids:
+            return []
         conditions = []
-        if service_id is not None:
-            conditions.append(qm.FieldCondition(key="service_id", match=qm.MatchValue(value=service_id)))
+        if workspace_id is not None:
+            # Points store the workspace under its pre-rename key "service_id";
+            # renaming it would mean rewriting every point's payload.
+            conditions.append(qm.FieldCondition(key="service_id", match=qm.MatchValue(value=workspace_id)))
         if document_id is not None:
             conditions.append(qm.FieldCondition(key="document_id", match=qm.MatchValue(value=document_id)))
+        if document_ids:
+            conditions.append(qm.FieldCondition(key="document_id", match=qm.MatchAny(any=document_ids)))
         flt = qm.Filter(must=conditions) if conditions else None
         return self._do_search(vector, top_k, flt, query_text)
 

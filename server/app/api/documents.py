@@ -13,8 +13,8 @@ from pydantic import TypeAdapter, ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.api.deps import DbDep, ServiceMemberDep, ServiceWriterDep
-from app.db.models import Document, DocumentStatus, Service
+from app.api.deps import DbDep, WorkspaceMemberDep, WorkspaceWriterDep
+from app.db.models import Document, DocumentStatus, Workspace
 from app.ingest.loaders import convert_to_documents, guess_mime_type
 from app.schemas.documents import AnyChunkConfig, DocumentListResponse, DocumentOut, DocumentUpdate
 from app.services.documents import delete_document, delete_document_dir, save_document_file
@@ -24,7 +24,7 @@ from app.storage import get_storage
 logger = logging.getLogger(__name__)
 _chunk_config_adapter = TypeAdapter(AnyChunkConfig)
 
-router = APIRouter(prefix="/services/{service_id}/documents", tags=["documents"])
+router = APIRouter(prefix="/workspaces/{workspace_id}/documents", tags=["documents"])
 
 
 def get_tx_db(db: DbDep) -> Iterator[Session]:
@@ -41,15 +41,15 @@ TxDbDep = Annotated[Session, Depends(get_tx_db)]
 
 @router.get("", response_model=DocumentListResponse)
 def list_documents(
-    service_id: int,
+    workspace_id: int,
     db: DbDep,
-    _membership: ServiceMemberDep,
+    _membership: WorkspaceMemberDep,
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     q: str | None = Query(None),
 ) -> DocumentListResponse:
-    stmt = select(Document).where(Document.service_id == service_id)
-    count_stmt = select(func.count()).select_from(Document).where(Document.service_id == service_id)
+    stmt = select(Document).where(Document.workspace_id == workspace_id)
+    count_stmt = select(func.count()).select_from(Document).where(Document.workspace_id == workspace_id)
     if q:
         like = f"%{q}%"
         stmt = stmt.where(Document.title.ilike(like))
@@ -71,23 +71,23 @@ def list_documents(
 
 @router.post("", response_model=DocumentOut, status_code=status.HTTP_201_CREATED)
 def create_document(
-    service_id: int,
-    _writer: ServiceWriterDep,
+    workspace_id: int,
+    _writer: WorkspaceWriterDep,
     db: TxDbDep,
     file: UploadFile = File(...),
     title: str = Form(...),
     description: str | None = Form(None),
     chunk_config: str | None = Form(None),
 ) -> DocumentOut:
-    if not db.get(Service, service_id):
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "service not found")
+    if not db.get(Workspace, workspace_id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "workspace not found")
     if not file.filename:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "file is required")
 
     parsed_chunk_config = _parse_chunk_config(chunk_config)
 
     document = Document(
-        service_id=service_id,
+        workspace_id=workspace_id,
         title=title,
         description=description,
         source_filename=file.filename,
@@ -122,9 +122,9 @@ def create_document(
 
 
 @router.get("/{document_id}", response_model=DocumentOut)
-def get_document(service_id: int, document_id: int, db: DbDep, _membership: ServiceMemberDep) -> DocumentOut:
+def get_document(workspace_id: int, document_id: int, db: DbDep, _membership: WorkspaceMemberDep) -> DocumentOut:
     document = db.execute(
-        select(Document).where(Document.id == document_id, Document.service_id == service_id)
+        select(Document).where(Document.id == document_id, Document.workspace_id == workspace_id)
     ).scalar_one_or_none()
     if not document:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "document not found")
@@ -133,14 +133,14 @@ def get_document(service_id: int, document_id: int, db: DbDep, _membership: Serv
 
 @router.patch("/{document_id}", response_model=DocumentOut)
 def update_document(
-    service_id: int,
+    workspace_id: int,
     document_id: int,
     payload: DocumentUpdate,
-    _writer: ServiceWriterDep,
+    _writer: WorkspaceWriterDep,
     db: TxDbDep,
 ) -> DocumentOut:
     document = db.execute(
-        select(Document).where(Document.id == document_id, Document.service_id == service_id)
+        select(Document).where(Document.id == document_id, Document.workspace_id == workspace_id)
     ).scalar_one_or_none()
     if not document:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "document not found")
@@ -153,13 +153,13 @@ def update_document(
 
 @router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_document_endpoint(
-    service_id: int,
+    workspace_id: int,
     document_id: int,
-    _writer: ServiceWriterDep,
+    _writer: WorkspaceWriterDep,
     db: TxDbDep,
 ) -> None:
     document = db.execute(
-        select(Document).where(Document.id == document_id, Document.service_id == service_id)
+        select(Document).where(Document.id == document_id, Document.workspace_id == workspace_id)
     ).scalar_one_or_none()
     if not document:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "document not found")
@@ -168,9 +168,9 @@ def delete_document_endpoint(
 
 
 @router.get("/{document_id}/preview-text")
-def preview_text(service_id: int, document_id: int, db: DbDep, _membership: ServiceMemberDep) -> dict[str, str]:
+def preview_text(workspace_id: int, document_id: int, db: DbDep, _membership: WorkspaceMemberDep) -> dict[str, str]:
     document = db.execute(
-        select(Document).where(Document.id == document_id, Document.service_id == service_id)
+        select(Document).where(Document.id == document_id, Document.workspace_id == workspace_id)
     ).scalar_one_or_none()
     if not document:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "document not found")
@@ -184,10 +184,10 @@ def preview_text(service_id: int, document_id: int, db: DbDep, _membership: Serv
 
 @router.get("/{document_id}/file")
 def download_file(
-    service_id: int, document_id: int, db: DbDep, _membership: ServiceMemberDep
+    workspace_id: int, document_id: int, db: DbDep, _membership: WorkspaceMemberDep
 ) -> Response:
     document = db.execute(
-        select(Document).where(Document.id == document_id, Document.service_id == service_id)
+        select(Document).where(Document.id == document_id, Document.workspace_id == workspace_id)
     ).scalar_one_or_none()
     if not document:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "document not found")

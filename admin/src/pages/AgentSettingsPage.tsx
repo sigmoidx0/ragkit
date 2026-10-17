@@ -1,21 +1,25 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
-import { AgentsApi, PipelineApi } from "@/api/endpoints";
+import { AgentsApi, DocumentSetsApi, McpApi, PipelineApi } from "@/api/endpoints";
 import type {
   AgentAccent,
   AgentConfig,
   AgentRouteName,
-  GraphTopology,
+  GraphPreview,
   LlmProvider,
+  McpApproval,
+  McpServer,
+  McpToolRef,
   RetrievalMode,
 } from "@/api/types";
 import { ExecutionGraph } from "@/components/chat/ExecutionGraph";
-import { Button, Card, Input, Label, Select, Textarea } from "@/components/ui";
+import { Badge, Button, Card, Input, Label, Select, Textarea } from "@/components/ui";
 import { ACCENT_THEMES, getAgentTheme } from "@/lib/agentTheme";
 import { cn } from "@/lib/cn";
-import { useService } from "@/services/ServiceProvider";
+import { useWorkspace } from "@/workspace/WorkspaceProvider";
 
 const ROUTE_ORDER: AgentRouteName[] = ["retrieval", "summary", "comparison", "direct"];
 
@@ -105,7 +109,8 @@ function OptionalNumber({
 }
 
 export default function AgentSettingsPage() {
-  const { current: agent, services: allAgents, refresh } = useService();
+  const { agent, agents: workspaceAgents, selectAgent, refresh } = useWorkspace();
+  const navigate = useNavigate();
   const qc = useQueryClient();
   const agentId = agent?.id;
 
@@ -116,11 +121,45 @@ export default function AgentSettingsPage() {
   });
   const { data: providers = [] } = useQuery({ queryKey: ["llm-providers"], queryFn: AgentsApi.providers });
   const { data: pipelines = [] } = useQuery({
-    queryKey: ["pipelines", agentId],
-    queryFn: () => PipelineApi.list(agentId!),
-    enabled: agentId != null,
+    queryKey: ["pipelines", agent?.workspace_id],
+    queryFn: () => PipelineApi.list(agent!.workspace_id),
+    enabled: agent != null,
   });
   const activePipelines = pipelines.filter((p) => p.status === "active");
+
+  const { data: documentSets = [] } = useQuery({
+    queryKey: ["document-sets", agent?.workspace_id],
+    queryFn: () => DocumentSetsApi.list(agent!.workspace_id),
+    enabled: agent != null,
+  });
+  const { data: mcpServers = [] } = useQuery({
+    queryKey: ["mcp-servers", agent?.workspace_id],
+    queryFn: () => McpApi.list(agent!.workspace_id),
+    enabled: agent != null,
+  });
+  // Delegates can live in any workspace the user belongs to.
+  const { data: reachableAgents = [] } = useQuery({ queryKey: ["agents-all"], queryFn: () => AgentsApi.listMine() });
+
+  const [name, setName] = useState(agent?.name ?? "");
+  useEffect(() => setName(agent?.name ?? ""), [agent?.id, agent?.name]);
+  const rename = useMutation({
+    mutationFn: () => AgentsApi.rename(agentId!, name.trim()),
+    onSuccess: () => {
+      toast.success("Agent renamed");
+      void refresh();
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to rename"),
+  });
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const removeAgent = useMutation({
+    mutationFn: () => AgentsApi.remove(agentId!),
+    onSuccess: async () => {
+      toast.success("Agent deleted");
+      await refresh();
+      navigate("/");
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to delete"),
+  });
 
   // The working copy the form edits; `saved` stays the server's truth.
   const [draft, setDraft] = useState<AgentConfig | null>(null);
@@ -133,7 +172,7 @@ export default function AgentSettingsPage() {
 
   // ── Live router preview ──
   const [previewMode, setPreviewMode] = useState<RetrievalMode | null>(null);
-  const [topology, setTopology] = useState<GraphTopology | null>(null);
+  const [topology, setTopology] = useState<GraphPreview | null>(null);
   useEffect(() => {
     if (!draft || agentId == null) return;
     const handle = setTimeout(() => {
@@ -158,7 +197,7 @@ export default function AgentSettingsPage() {
     return <Card className="p-8 text-sm text-gray-500">Select an agent first.</Card>;
   }
   if (agent.role !== "admin") {
-    return <Card className="p-8 text-sm text-gray-500">Only agent admins can change these settings.</Card>;
+    return <Card className="p-8 text-sm text-gray-500">Only workspace admins can change agent settings.</Card>;
   }
   if (isLoading || !draft) {
     return <div className="h-96 animate-pulse rounded-2xl bg-gray-100 dark:bg-gray-800" />;
@@ -190,8 +229,29 @@ export default function AgentSettingsPage() {
             {theme.icon}
           </span>
           <div>
-            <h1 className="text-xl font-bold text-[#2D3748] dark:text-gray-100">{agent.name}</h1>
-            <p className="text-xs text-gray-500 dark:text-gray-400">Agent settings · changes apply to the next message</p>
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl font-bold text-[#2D3748] dark:text-gray-100">{agent.name}</h1>
+              {workspaceAgents.length > 1 && (
+                <Select
+                  className="w-auto py-1 text-xs"
+                  value={agent.id}
+                  aria-label="Switch agent"
+                  onChange={(e) => {
+                    const next = workspaceAgents.find((a) => a.id === Number(e.target.value));
+                    if (next) selectAgent(next);
+                  }}
+                >
+                  {workspaceAgents.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </div>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              {agent.workspace_name} · changes apply to the next message
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -209,6 +269,20 @@ export default function AgentSettingsPage() {
         <div className="space-y-5">
           {/* ── Profile ── */}
           <Section title="Profile" hint="How this agent appears on the landing page.">
+            <div>
+              <Label htmlFor="agent-name">Name</Label>
+              <div className="flex gap-2">
+                <Input id="agent-name" value={name} maxLength={255} onChange={(e) => setName(e.target.value)} />
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={!name.trim() || name.trim() === agent.name || rename.isPending}
+                  onClick={() => rename.mutate()}
+                >
+                  Rename
+                </Button>
+              </div>
+            </div>
             <div>
               <Label>Icon & color</Label>
               <div className="flex flex-wrap items-center gap-1.5">
@@ -362,6 +436,68 @@ export default function AgentSettingsPage() {
             </div>
           </Section>
 
+          {/* ── Document sets ── */}
+          <Section
+            title="Document sets"
+            hint="The documents this agent searches. With no set selected it searches nothing and answers from the model alone."
+          >
+            {documentSets.length === 0 ? (
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                This workspace has no document sets yet, so the agent has no documents to search.{" "}
+                <Link to="/document-sets" className="text-teal-600 hover:underline">
+                  Create one
+                </Link>
+              </p>
+            ) : (
+              <div className="grid gap-2 sm:grid-cols-2">
+                {documentSets.map((ds) => {
+                  const on = draft.document_set_ids.includes(ds.id);
+                  return (
+                    <label
+                      key={ds.id}
+                      className={cn(
+                        "flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition-colors",
+                        on
+                          ? "border-teal-300 bg-teal-50/60 dark:border-teal-800 dark:bg-teal-900/10"
+                          : "border-gray-200 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-700/40",
+                      )}
+                    >
+                      <input
+                        type="checkbox"
+                        className="mt-0.5 accent-teal-500"
+                        checked={on}
+                        onChange={() =>
+                          patch({
+                            document_set_ids: on
+                              ? draft.document_set_ids.filter((id) => id !== ds.id)
+                              : [...draft.document_set_ids, ds.id],
+                          })
+                        }
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-semibold text-[#2D3748] dark:text-gray-100">
+                          {ds.name}
+                        </span>
+                        <span className="block truncate text-[11px] text-gray-500 dark:text-gray-400">
+                          {ds.document_ids.length} documents{ds.description ? ` · ${ds.description}` : ""}
+                        </span>
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+            <p className="text-[11px] text-gray-500 dark:text-gray-400">
+              {draft.document_set_ids.length === 0 ? (
+                <span className="font-semibold text-amber-600 dark:text-amber-400">
+                  No set selected — this agent searches no documents.
+                </span>
+              ) : (
+                `Searching ${topology?.document_count ?? "…"} document(s) across ${draft.document_set_ids.length} set(s).`
+              )}
+            </p>
+          </Section>
+
           {/* ── Retrieval ── */}
           <Section title="Retrieval" hint="Where and how much this agent searches before answering.">
             <div>
@@ -418,16 +554,28 @@ export default function AgentSettingsPage() {
             </div>
           </Section>
 
+          {/* ── MCP tools ── */}
+          <Section
+            title="MCP tools"
+            hint="Tools from this workspace's MCP servers. Lookups can run on their own; anything that changes data should wait for the user's approval in the chat."
+          >
+            <McpToolPicker
+              servers={mcpServers}
+              value={draft.mcp_tools ?? []}
+              onChange={(mcp_tools) => patch({ mcp_tools })}
+            />
+          </Section>
+
           {/* ── Delegation ── */}
           <Section
             title="Delegation"
             hint="Other agents this one may consult as tools when a question falls outside its own documents."
           >
-            {allAgents.filter((a) => a.id !== agent.id).length === 0 ? (
+            {reachableAgents.filter((a) => a.id !== agent.id).length === 0 ? (
               <p className="text-xs text-gray-500 dark:text-gray-400">No other agents to delegate to.</p>
             ) : (
               <div className="grid gap-2 sm:grid-cols-2">
-                {allAgents
+                {reachableAgents
                   .filter((a) => a.id !== agent.id)
                   .map((other) => {
                     const on = draft.delegates.includes(other.id);
@@ -461,7 +609,7 @@ export default function AgentSettingsPage() {
                             {other.name}
                           </span>
                           <span className="block truncate text-[11px] text-gray-500 dark:text-gray-400">
-                            {other.agent_config.description || `${other.document_count} documents`}
+                            {other.workspace_name} · {other.agent_config.description || `${other.document_count} documents`}
                           </span>
                         </span>
                         <input type="checkbox" readOnly checked={on} className="accent-rose-500" />
@@ -532,6 +680,29 @@ export default function AgentSettingsPage() {
               </p>
             )}
           </Section>
+          {/* ── Danger zone ── */}
+          <Section title="Delete agent" hint="Removes this agent with its prompts, chats, evaluations and feedback. The workspace's documents and document sets stay.">
+            {confirmDelete ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs text-rose-600">Delete {agent.name} permanently?</span>
+                <Button size="sm" variant="secondary" onClick={() => setConfirmDelete(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  className="bg-rose-500 hover:bg-rose-600"
+                  disabled={removeAgent.isPending}
+                  onClick={() => removeAgent.mutate()}
+                >
+                  {removeAgent.isPending ? "Deleting…" : "Delete agent"}
+                </Button>
+              </div>
+            ) : (
+              <Button size="sm" variant="secondary" onClick={() => setConfirmDelete(true)}>
+                Delete this agent…
+              </Button>
+            )}
+          </Section>
         </div>
 
         {/* ── Live preview ── */}
@@ -563,6 +734,143 @@ export default function AgentSettingsPage() {
           </Card>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── MCP tool picker ──────────────────────────────────────────────────────────
+
+function McpToolPicker({
+  servers,
+  value,
+  onChange,
+}: {
+  servers: McpServer[];
+  value: McpToolRef[];
+  onChange: (refs: McpToolRef[]) => void;
+}) {
+  if (servers.length === 0) {
+    return (
+      <p className="text-xs text-gray-500 dark:text-gray-400">
+        No MCP servers in this workspace yet.{" "}
+        <Link to="/mcp" className="text-teal-600 hover:underline">
+          Add one
+        </Link>
+      </p>
+    );
+  }
+  const find = (serverId: number, tool: string) => value.find((r) => r.server_id === serverId && r.tool === tool);
+  const set = (serverId: number, tool: string, ref: McpToolRef | null) =>
+    onChange([...value.filter((r) => !(r.server_id === serverId && r.tool === tool)), ...(ref ? [ref] : [])]);
+
+  return (
+    <div className="space-y-3">
+      {servers.map((server) => {
+        const chosen = value.filter((r) => r.server_id === server.id).length;
+        const allOn = server.tools.length > 0 && chosen === server.tools.length;
+        return (
+          <div key={server.id} className="rounded-xl border border-gray-200 dark:border-gray-700">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 px-3 py-2 dark:border-gray-700">
+              <div>
+                <span className="text-sm font-semibold text-[#2D3748] dark:text-gray-100">{server.name}</span>
+                <span className="ml-2 text-[11px] text-gray-400">
+                  {chosen}/{server.tools.length} tools
+                  {!server.enabled && " · server disabled"}
+                  {server.last_error && " · connection failed"}
+                </span>
+              </div>
+              {server.tools.length > 0 && (
+                <button
+                  type="button"
+                  className="text-[11px] font-semibold text-teal-600 hover:underline"
+                  onClick={() =>
+                    onChange([
+                      ...value.filter((r) => r.server_id !== server.id),
+                      ...(allOn
+                        ? []
+                        : server.tools.map((t) => ({
+                            server_id: server.id,
+                            tool: t.name,
+                            // Keep a choice already made; default writes to approval.
+                            approval: find(server.id, t.name)?.approval ?? (t.read_only ? "auto" : "required"),
+                          }) as McpToolRef)),
+                    ])
+                  }
+                >
+                  {allOn ? "Clear all" : "Select all"}
+                </button>
+              )}
+            </div>
+            <div className="divide-y divide-gray-100 dark:divide-gray-700">
+              {server.tools.map((t) => {
+                const ref = find(server.id, t.name);
+                return (
+                  <div key={t.name} className="flex flex-wrap items-center gap-3 px-3 py-2">
+                    <label className="flex min-w-0 flex-1 cursor-pointer items-start gap-2">
+                      <input
+                        type="checkbox"
+                        className="mt-0.5 accent-teal-500"
+                        checked={ref != null}
+                        onChange={() =>
+                          set(
+                            server.id,
+                            t.name,
+                            ref ? null : { server_id: server.id, tool: t.name, approval: t.read_only ? "auto" : "required" },
+                          )
+                        }
+                      />
+                      <span className="min-w-0">
+                        <span className="block text-xs font-semibold text-gray-700 dark:text-gray-200">
+                          {t.title || t.name}{" "}
+                          <span className="font-mono font-normal text-gray-400">{t.name}</span>
+                        </span>
+                        <span className="block truncate text-[11px] text-gray-400">{t.description.split("\n")[0]}</span>
+                      </span>
+                    </label>
+                    {t.read_only ? (
+                      <Badge tone="green">read-only</Badge>
+                    ) : (
+                      <Badge tone={t.destructive ? "red" : "amber"}>{t.destructive ? "destructive" : "writes"}</Badge>
+                    )}
+                    <div
+                      className={cn(
+                        "flex overflow-hidden rounded-lg border text-[11px] dark:border-gray-600",
+                        !ref && "pointer-events-none opacity-40",
+                      )}
+                      role="radiogroup"
+                      aria-label={`Approval for ${t.name}`}
+                    >
+                      {(["auto", "required"] as McpApproval[]).map((mode) => (
+                        <button
+                          key={mode}
+                          type="button"
+                          role="radio"
+                          aria-checked={ref?.approval === mode}
+                          onClick={() => ref && set(server.id, t.name, { ...ref, approval: mode })}
+                          className={cn(
+                            "px-2 py-1 font-semibold",
+                            ref?.approval === mode
+                              ? mode === "required"
+                                ? "bg-violet-600 text-white"
+                                : "bg-teal-500 text-white"
+                              : "text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-700",
+                          )}
+                        >
+                          {mode === "auto" ? "Run" : "Ask first"}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+      <p className="text-[11px] text-gray-500 dark:text-gray-400">
+        “Ask first” tools pause the chat until the user approves, rejects or edits the call. They aren't offered where a
+        run can't pause — the one-off chat API, evaluations, and when another agent delegates to this one.
+      </p>
     </div>
   );
 }

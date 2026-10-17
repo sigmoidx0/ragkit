@@ -1,7 +1,7 @@
 import type { ReactElement } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "./AuthProvider";
-import { useService } from "@/services/ServiceProvider";
+import { useWorkspace } from "@/workspace/WorkspaceProvider";
 
 export function RequireAuth({ children }: { children: ReactElement }) {
   const { user, loading } = useAuth();
@@ -13,11 +13,11 @@ export function RequireAuth({ children }: { children: ReactElement }) {
   return children;
 }
 
-export function RequireServiceAdmin({ children }: { children: ReactElement }) {
-  const { current, loading } = useService();
+export function RequireWorkspaceAdmin({ children }: { children: ReactElement }) {
+  const { isWorkspaceAdmin, loading } = useWorkspace();
   if (loading) return <div className="p-6 text-slate-500">Loading…</div>;
-  if (current?.role !== "admin") {
-    return <Navigate to="/documents" replace />;
+  if (!isWorkspaceAdmin) {
+    return <Navigate to="/" replace />;
   }
   return children;
 }

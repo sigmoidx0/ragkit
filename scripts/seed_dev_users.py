@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Populate the dev DB with demo accounts covering all service roles.
+"""Populate the dev DB with demo accounts covering all workspace roles.
 
 Run from the project root:
     cd server && python ../scripts/seed_dev_users.py
@@ -9,16 +9,16 @@ Accounts after seeding
 SuperAdmin
   platform.admin@ragkit.io   maple.forest9
 
-Default service
+Default workspace
   alice.morgan@ragkit.io     harbor.tide4   admin
   bob.chen@ragkit.io         silver.peak6   member
   clara.kim@ragkit.io        river.stone2   viewer
 
-제조 service
+제조 workspace
   bob.chen@ragkit.io         (same)         member
   dan.okafor@ragkit.io       echo.trail7    viewer
 
-금융 service
+금융 workspace
   elena.park@ragkit.io       golden.gate5   member
   felix.wu@ragkit.io         winter.cove3   viewer
 """
@@ -35,7 +35,7 @@ sys.path.insert(0, str(server_dir))
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import Service, ServiceMembership, ServiceRole, SuperAdmin, User
+from app.db.models import SuperAdmin, User, Workspace, WorkspaceMembership, WorkspaceRole
 from app.db.session import SessionLocal
 from app.security.passwords import hash_password
 
@@ -49,16 +49,16 @@ USERS: list[dict] = [
     {"email": "felix.wu@ragkit.io",       "password": "winter.cove3"},
 ]
 
-# (user_email, service_slug, role)
-MEMBERSHIPS: list[tuple[str, str, ServiceRole]] = [
-    ("platform.admin@ragkit.io", "default",     ServiceRole.admin),
-    ("alice.morgan@ragkit.io",   "default",     ServiceRole.admin),
-    ("bob.chen@ragkit.io",       "default",     ServiceRole.member),
-    ("clara.kim@ragkit.io",      "default",     ServiceRole.viewer),
-    ("bob.chen@ragkit.io",       "manufacture", ServiceRole.member),
-    ("dan.okafor@ragkit.io",     "manufacture", ServiceRole.viewer),
-    ("elena.park@ragkit.io",     "finance",     ServiceRole.member),
-    ("felix.wu@ragkit.io",       "finance",     ServiceRole.viewer),
+# (user_email, workspace_slug, role)
+MEMBERSHIPS: list[tuple[str, str, WorkspaceRole]] = [
+    ("platform.admin@ragkit.io", "default",     WorkspaceRole.admin),
+    ("alice.morgan@ragkit.io",   "default",     WorkspaceRole.admin),
+    ("bob.chen@ragkit.io",       "default",     WorkspaceRole.member),
+    ("clara.kim@ragkit.io",      "default",     WorkspaceRole.viewer),
+    ("bob.chen@ragkit.io",       "manufacture", WorkspaceRole.member),
+    ("dan.okafor@ragkit.io",     "manufacture", WorkspaceRole.viewer),
+    ("elena.park@ragkit.io",     "finance",     WorkspaceRole.member),
+    ("felix.wu@ragkit.io",       "finance",     WorkspaceRole.viewer),
 ]
 
 OLD_ADMIN_EMAIL = "admin@example.com"
@@ -100,28 +100,28 @@ def seed(db: Session) -> None:
                 print(f"  granted  super_admin -> {u['email']}")
 
     # Upsert memberships
-    service_map: dict[str, Service] = {}
-    for svc in db.execute(select(Service)).scalars():
-        service_map[svc.slug] = svc
+    workspace_map: dict[str, Workspace] = {}
+    for svc in db.execute(select(Workspace)).scalars():
+        workspace_map[svc.slug] = svc
 
     print("\nMemberships:")
     for email, slug, role in MEMBERSHIPS:
-        svc = service_map.get(slug)
+        svc = workspace_map.get(slug)
         if svc is None:
-            print(f"  SKIP     {email} / {slug} (service not found)")
+            print(f"  SKIP     {email} / {slug} (workspace not found)")
             continue
         user = user_map.get(email)
         if user is None:
             print(f"  SKIP     {email} / {slug} (user not found)")
             continue
         existing = db.execute(
-            select(ServiceMembership).where(
-                ServiceMembership.user_id == user.id,
-                ServiceMembership.service_id == svc.id,
+            select(WorkspaceMembership).where(
+                WorkspaceMembership.user_id == user.id,
+                WorkspaceMembership.workspace_id == svc.id,
             )
         ).scalar_one_or_none()
         if existing is None:
-            db.add(ServiceMembership(user_id=user.id, service_id=svc.id, role=role))
+            db.add(WorkspaceMembership(user_id=user.id, workspace_id=svc.id, role=role))
             print(f"  added    {email} @ {slug} [{role.value}]")
         else:
             existing.role = role

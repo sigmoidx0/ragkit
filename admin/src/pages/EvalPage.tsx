@@ -11,10 +11,11 @@ import type {
   EvalSummary,
   LlmProvider,
   RetrievalMode,
+  UnansweredItem,
 } from "@/api/types";
 import { Badge, Button, Card, Input, Label, Select } from "@/components/ui";
 import { cn } from "@/lib/cn";
-import { useService } from "@/services/ServiceProvider";
+import { useWorkspace } from "@/workspace/WorkspaceProvider";
 
 const RUN_COLORS = ["#14b8a6", "#8b5cf6"]; // A, B
 
@@ -315,6 +316,7 @@ function applyOverrides(base: AgentConfig, o: VariantOverrides): AgentConfig {
 
 function NewEvalPanel({
   agentId,
+  workspaceId,
   runs,
   documents,
   initialCases,
@@ -322,6 +324,7 @@ function NewEvalPanel({
   onCreated,
 }: {
   agentId: number;
+  workspaceId: number;
   runs: EvalRun[];
   documents: { id: number; title: string }[];
   /** Questions to start from — e.g. answers users rated 👎. */
@@ -332,8 +335,8 @@ function NewEvalPanel({
   const { data: saved } = useQuery({ queryKey: ["agent-config", agentId], queryFn: () => AgentsApi.getConfig(agentId) });
   const { data: providers = [] } = useQuery({ queryKey: ["llm-providers"], queryFn: AgentsApi.providers });
   const { data: pipelines = [] } = useQuery({
-    queryKey: ["pipelines", agentId],
-    queryFn: () => PipelineApi.list(agentId),
+    queryKey: ["pipelines", workspaceId],
+    queryFn: () => PipelineApi.list(workspaceId),
   });
 
   const [name, setName] = useState(`Run ${runs.length + 1}`);
@@ -580,94 +583,219 @@ function NewEvalPanel({
 
 // ── User feedback ────────────────────────────────────────────────────────────
 
+type FeedbackFilter = "all" | "down" | "up";
+
 /**
- * What users said about this agent's answers. Thumbs-down answers are the raw
- * material for evaluations: pick some and they become a question set, so a
- * fix can be measured against exactly the cases that failed.
+ * Answers users rated in their own chats — one row per rated answer, each with
+ * its own 👍 or 👎. Not a like counter on a single item: the summary counts
+ * how many answers, across how many chats, went each way.
+ *
+ * Thumbs-down answers are the raw material for evaluations: pick some and they
+ * become a question set, so a fix is measured against exactly what failed.
  */
 function FeedbackPanel({ agentId, onEvaluate }: { agentId: number; onEvaluate: (cases: EvalCase[]) => void }) {
   const { data } = useQuery({ queryKey: ["feedback", agentId], queryFn: () => FeedbackApi.list(agentId) });
+  const [filter, setFilter] = useState<FeedbackFilter>("down");
   const [picked, setPicked] = useState<number[]>([]);
   const [open, setOpen] = useState<number | null>(null);
   if (!data) return null;
 
   const total = data.up + data.down;
-  const negatives = data.items.filter((i) => i.rating === -1);
+  const chats = new Set(data.items.map((i) => i.session_id)).size;
+  const shown = data.items.filter((i) => filter === "all" || (filter === "down" ? i.rating === -1 : i.rating === 1));
   const toggle = (id: number) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
+  const pickedItems = data.items.filter((i) => picked.includes(i.id));
+
+  const tabs: { key: FeedbackFilter; label: string; count: number }[] = [
+    { key: "down", label: "👎 Not helpful", count: data.down },
+    { key: "up", label: "👍 Helpful", count: data.up },
+    { key: "all", label: "All", count: total },
+  ];
 
   return (
     <Card className="p-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="text-sm font-bold text-[#2D3748] dark:text-gray-100">User feedback</h2>
+          <h2 className="text-sm font-bold text-[#2D3748] dark:text-gray-100">Rated answers</h2>
           <p className="text-xs text-gray-500 dark:text-gray-400">
-            Ratings left in chat. Turn the answers users disliked into an evaluation, fix, and re-run.
+            {total === 0
+              ? "No answers rated yet. Users rate answers in their own chats with 👍 / 👎."
+              : `${total} answer${total === 1 ? "" : "s"} rated across ${chats} chat${chats === 1 ? "" : "s"} — each row is one answer in one user's chat.`}
           </p>
         </div>
-        <div className="flex items-center gap-4 text-center">
-          <div>
-            <p className="font-mono text-lg font-bold text-gray-800 dark:text-gray-100">
-              {total ? `${Math.round((data.up / total) * 100)}%` : "—"}
+        {total > 0 && (
+          // Share of rated answers each way — a proportion bar, not a vote tally.
+          <div className="w-48">
+            <div className="flex h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
+              <div className="bg-teal-400" style={{ width: `${(data.up / total) * 100}%` }} />
+              <div className="bg-rose-400" style={{ width: `${(data.down / total) * 100}%` }} />
+            </div>
+            <p className="mt-1 text-right text-[10px] text-gray-400">
+              {Math.round((data.up / total) * 100)}% of rated answers helpful
             </p>
-            <p className="text-[10px] uppercase tracking-wide text-gray-400">satisfaction</p>
           </div>
-          <div>
-            <p className="font-mono text-lg font-bold text-teal-600">{data.up}</p>
-            <p className="text-[10px] uppercase tracking-wide text-gray-400">👍</p>
-          </div>
-          <div>
-            <p className="font-mono text-lg font-bold text-rose-500">{data.down}</p>
-            <p className="text-[10px] uppercase tracking-wide text-gray-400">👎</p>
-          </div>
-        </div>
+        )}
       </div>
 
-      {negatives.length === 0 ? (
-        <p className="mt-4 text-xs text-gray-400">No 👎 yet — nothing to investigate.</p>
-      ) : (
+      {total > 0 && (
         <>
-          <div className="mt-4 divide-y rounded-xl border dark:divide-gray-700 dark:border-gray-700">
-            {negatives.map((item) => (
-              <div key={item.id} className="px-3 py-2 text-xs">
-                <div className="flex items-start gap-2">
-                  <input
-                    type="checkbox"
-                    className="mt-0.5 accent-rose-500"
-                    checked={picked.includes(item.id)}
-                    onChange={() => toggle(item.id)}
-                  />
-                  <button className="min-w-0 flex-1 text-left" onClick={() => setOpen(open === item.id ? null : item.id)}>
-                    <p className="font-medium text-gray-800 dark:text-gray-100">{item.question}</p>
-                    {item.comment && <p className="mt-0.5 text-rose-500">“{item.comment}”</p>}
-                    <p className="mt-0.5 text-[10px] text-gray-400">
-                      {item.user_email} · {item.session_title ?? `session #${item.session_id}`} ·{" "}
-                      {new Date(item.created_at).toLocaleString()}
-                    </p>
-                  </button>
-                </div>
-                {open === item.id && (
-                  <p className="ml-6 mt-2 whitespace-pre-wrap rounded-lg bg-gray-50 p-2 text-[11px] leading-relaxed text-gray-600 dark:bg-gray-700/40 dark:text-gray-300">
-                    {item.answer}
-                  </p>
+          <div className="mt-4 flex gap-1 text-xs">
+            {tabs.map((t) => (
+              <button
+                key={t.key}
+                onClick={() => setFilter(t.key)}
+                className={cn(
+                  "rounded-lg px-2.5 py-1 transition-colors",
+                  filter === t.key
+                    ? "bg-gray-100 font-semibold text-gray-800 dark:bg-gray-700 dark:text-gray-100"
+                    : "text-gray-500 hover:text-gray-700 dark:text-gray-400",
                 )}
-              </div>
+              >
+                {t.label} <span className="font-mono text-gray-400">{t.count}</span>
+              </button>
+            ))}
+          </div>
+
+          {shown.length === 0 ? (
+            <p className="mt-3 text-xs text-gray-400">Nothing here.</p>
+          ) : (
+            <div className="mt-2 divide-y rounded-xl border dark:divide-gray-700 dark:border-gray-700">
+              {shown.map((item) => (
+                <div key={item.id} className="px-3 py-2.5 text-xs">
+                  <div className="flex items-start gap-2.5">
+                    <input
+                      type="checkbox"
+                      className="mt-1 accent-rose-500"
+                      title="Add to an evaluation"
+                      checked={picked.includes(item.id)}
+                      onChange={() => toggle(item.id)}
+                    />
+                    <span
+                      className={cn(
+                        "mt-0.5 shrink-0 rounded-md px-1.5 py-0.5 text-[11px]",
+                        item.rating === 1 ? "bg-teal-50 dark:bg-teal-900/30" : "bg-rose-50 dark:bg-rose-900/30",
+                      )}
+                      title={item.rating === 1 ? "Rated helpful" : "Rated not helpful"}
+                    >
+                      {item.rating === 1 ? "👍" : "👎"}
+                    </span>
+                    <button className="min-w-0 flex-1 text-left" onClick={() => setOpen(open === item.id ? null : item.id)}>
+                      <p className="font-medium text-gray-800 dark:text-gray-100">{item.question}</p>
+                      {item.query && item.query !== item.question && (
+                        <p className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">→ searched as “{item.query}”</p>
+                      )}
+                      {open !== item.id && (
+                        <p className="mt-0.5 truncate text-gray-500 dark:text-gray-400">{item.answer}</p>
+                      )}
+                      {item.comment && (
+                        <p className={cn("mt-0.5", item.rating === 1 ? "text-teal-600" : "text-rose-500")}>
+                          “{item.comment}”
+                        </p>
+                      )}
+                      <p className="mt-0.5 text-[10px] text-gray-400">
+                        {item.user_email} · {item.session_title ?? `chat #${item.session_id}`} · answer{" "}
+                        {item.turn_index + 1} · {new Date(item.created_at).toLocaleString()}
+                      </p>
+                    </button>
+                  </div>
+                  {open === item.id && (
+                    <p className="ml-14 mt-2 whitespace-pre-wrap rounded-lg bg-gray-50 p-2 text-[11px] leading-relaxed text-gray-600 dark:bg-gray-700/40 dark:text-gray-300">
+                      {item.answer}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="mt-3 flex items-center justify-between">
+            <p className="text-[11px] text-gray-400">
+              {picked.length ? `${picked.length} selected` : "Select answers to re-test them in an evaluation."}
+            </p>
+            <Button
+              size="sm"
+              disabled={picked.length === 0}
+              // The standalone rewrite when there is one: a follow-up like
+              // "그럼 마감은?" means nothing as a case of its own.
+              onClick={() =>
+                onEvaluate(pickedItems.map((i) => ({ question: i.query ?? i.question, expected_document_id: null })))
+              }
+            >
+              Evaluate {picked.length || ""} selected
+            </Button>
+          </div>
+        </>
+      )}
+    </Card>
+  );
+}
+
+// ── Unanswered questions ─────────────────────────────────────────────────────
+
+/**
+ * Questions the agent searched for but answered without citing a single
+ * passage — usually "the documents don't cover this". Read as a to-do list:
+ * documents to add to the agent's sets, or questions retrieval should have
+ * found. Unlike ratings, these need no user to click anything.
+ */
+function UnansweredPanel({ agentId, onEvaluate }: { agentId: number; onEvaluate: (cases: EvalCase[]) => void }) {
+  const { data } = useQuery({ queryKey: ["unanswered", agentId], queryFn: () => FeedbackApi.unanswered(agentId) });
+  const [picked, setPicked] = useState<string[]>([]);
+  if (!data) return null;
+
+  const key = (i: UnansweredItem) => `${i.session_id}:${i.turn_index}`;
+  const toggle = (k: string) => setPicked((p) => (p.includes(k) ? p.filter((x) => x !== k) : [...p, k]));
+  const share = data.searched ? Math.round((data.unanswered / data.searched) * 100) : 0;
+
+  return (
+    <Card className="p-5">
+      <h2 className="text-sm font-bold text-[#2D3748] dark:text-gray-100">Unanswered questions</h2>
+      <p className="text-xs text-gray-500 dark:text-gray-400">
+        {data.searched === 0
+          ? "No chat questions logged yet."
+          : `${data.unanswered} of ${data.searched} questions that searched the documents (${share}%) were answered without citing any passage — usually because the documents don't cover them.`}
+      </p>
+
+      {data.items.length > 0 && (
+        <>
+          <div className="mt-3 divide-y rounded-xl border dark:divide-gray-700 dark:border-gray-700">
+            {data.items.map((item) => (
+              <label key={key(item)} className="flex cursor-pointer items-start gap-2.5 px-3 py-2.5 text-xs">
+                <input
+                  type="checkbox"
+                  className="mt-1 accent-amber-500"
+                  title="Add to an evaluation"
+                  checked={picked.includes(key(item))}
+                  onChange={() => toggle(key(item))}
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="block font-medium text-gray-800 dark:text-gray-100">{item.question}</span>
+                  {item.query !== item.question && (
+                    <span className="mt-0.5 block text-[11px] text-gray-500 dark:text-gray-400">
+                      → searched as “{item.query}”
+                    </span>
+                  )}
+                  <span className="mt-0.5 block text-[10px] text-gray-400">
+                    {item.user_email} · {item.session_title ?? `chat #${item.session_id}`} · {item.route ?? "agent"} ·{" "}
+                    {item.source_count} passage{item.source_count === 1 ? "" : "s"} found, none cited ·{" "}
+                    {new Date(item.created_at).toLocaleString()}
+                  </span>
+                </span>
+              </label>
             ))}
           </div>
           <div className="mt-3 flex items-center justify-between">
-            <button
-              className="text-[11px] text-gray-400 hover:text-gray-600"
-              onClick={() => setPicked(picked.length === negatives.length ? [] : negatives.map((i) => i.id))}
-            >
-              {picked.length === negatives.length ? "Clear selection" : "Select all"}
-            </button>
+            <p className="text-[11px] text-gray-400">
+              {picked.length ? `${picked.length} selected` : "Select questions to re-test them after adding documents."}
+            </p>
             <Button
               size="sm"
               disabled={picked.length === 0}
               onClick={() =>
                 onEvaluate(
-                  negatives
-                    .filter((i) => picked.includes(i.id))
-                    .map((i) => ({ question: i.question, expected_document_id: null })),
+                  data.items
+                    .filter((i) => picked.includes(key(i)))
+                    .map((i) => ({ question: i.query, expected_document_id: null })),
                 )
               }
             >
@@ -695,7 +823,7 @@ function StatusBadge({ run }: { run: EvalRun }) {
 }
 
 export default function EvalPage() {
-  const { current: agent } = useService();
+  const { agent } = useWorkspace();
   const qc = useQueryClient();
   const agentId = agent?.id;
 
@@ -708,10 +836,10 @@ export default function EvalPage() {
       (q.state.data ?? []).some((r) => r.status === "pending" || r.status === "running") ? 2000 : false,
   });
   const { data: docs } = useQuery({
-    queryKey: ["documents-all", agentId],
-    // The API caps a page at 200 — plenty for picking an expected document.
-    queryFn: () => DocumentsApi.list(agentId!, { limit: 200 }),
-    enabled: agentId != null,
+    // Expected documents come from the agent's workspace; the API caps a page at 200.
+    queryKey: ["documents-all", agent?.workspace_id],
+    queryFn: () => DocumentsApi.list(agent!.workspace_id, { limit: 200 }),
+    enabled: agent != null,
   });
   const documents = docs?.items ?? [];
   const docTitle = (id: number | null) =>
@@ -740,6 +868,13 @@ export default function EvalPage() {
   const toggle = (id: number) =>
     setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id].slice(-2)));
 
+  // Questions picked from feedback or the unanswered list open a new evaluation.
+  const evaluateCases = (cases: EvalCase[]) => {
+    setSeedCases(cases);
+    setCreating(true);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
   if (!agent) return <Card className="p-8 text-sm text-gray-500">Select an agent first.</Card>;
 
   return (
@@ -765,19 +900,16 @@ export default function EvalPage() {
       </div>
 
       {!creating && (
-        <FeedbackPanel
-          agentId={agent.id}
-          onEvaluate={(cases) => {
-            setSeedCases(cases);
-            setCreating(true);
-            window.scrollTo({ top: 0, behavior: "smooth" });
-          }}
-        />
+        <div className="grid gap-5 xl:grid-cols-2">
+          <FeedbackPanel agentId={agent.id} onEvaluate={evaluateCases} />
+          <UnansweredPanel agentId={agent.id} onEvaluate={evaluateCases} />
+        </div>
       )}
 
       {creating && (
         <NewEvalPanel
           agentId={agent.id}
+          workspaceId={agent.workspace_id}
           runs={runs}
           documents={documents}
           initialCases={seedCases}

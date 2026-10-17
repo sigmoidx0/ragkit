@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -56,9 +56,10 @@ class SupervisorRouteEvent(BaseModel):
 class GraphNode(BaseModel):
     id: str
     label: str
-    # "entry"/"exit" are LangGraph's __start__/__end__ sentinels; "supervisor"
-    # routes, "agent" does the work. The UI styles each kind differently.
-    kind: Literal["entry", "exit", "supervisor", "agent", "delegate"]
+    # "entry"/"exit" are LangGraph's __start__/__end__ sentinels; "step" prepares
+    # the turn's context, "supervisor" routes, "agent" does the work. The UI
+    # styles each kind differently.
+    kind: Literal["entry", "exit", "step", "supervisor", "agent", "delegate", "mcp"]
 
 
 class GraphEdge(BaseModel):
@@ -93,6 +94,27 @@ class DelegateStateEvent(BaseModel):
     status: Literal["running", "done"]
 
 
+class McpCallEvent(BaseModel):
+    """An MCP tool call starting or finishing, for the chat's step list."""
+
+    id: str  # the tool run, pairing start and end
+    server: str
+    tool: str
+    args: dict[str, Any] = {}
+    status: Literal["running", "waiting", "done", "error"]
+    output: str | None = None
+
+
+class ApprovalRequiredEvent(BaseModel):
+    """The run paused: an MCP tool call waits for the user to approve it."""
+
+    call_id: int
+    server: str
+    tool: str
+    title: str | None = None
+    args: dict[str, Any]
+
+
 class ErrorEvent(BaseModel):
     error: str
 
@@ -107,7 +129,7 @@ class ChatSessionResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    service_id: int
+    agent_id: int
     title: str | None
     created_at: datetime
     updated_at: datetime
@@ -137,3 +159,32 @@ class SessionChatRequest(BaseModel):
     top_k: int | None = None
     # None uses the agent's configured default_retrieval_mode.
     retrieval_mode: Literal["on", "off", "auto"] | None = None
+    # Replace the user message at this index (0-based, counting user messages)
+    # and everything after it — editing a question, or regenerating its answer.
+    replace_turn: int | None = Field(default=None, ge=0)
+    # With replace_turn and the same words: a regenerate, answered at
+    # agent.regenerate_temperature so it can come out differently.
+    regenerate: bool = False
+
+
+# ── MCP approvals ────────────────────────────────────────────────────────────
+
+class PendingApprovalOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    server_name: str
+    tool: str
+    args: dict[str, Any]
+    created_at: datetime
+
+
+class ApprovalDecision(BaseModel):
+    call_id: int
+    approve: bool
+    # Approve with these arguments instead of the model's.
+    args: dict[str, Any] | None = None
+
+
+class ApprovalDecisionRequest(BaseModel):
+    decisions: list[ApprovalDecision] = Field(min_length=1, max_length=10)

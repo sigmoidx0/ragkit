@@ -1,16 +1,17 @@
-import { useRef, useState, useEffect, type KeyboardEvent } from "react";
+import { useCallback, useRef, useState, useEffect, type KeyboardEvent } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { SessionsApi, SystemPromptsApi } from "@/api/endpoints";
-import { useService } from "@/services/ServiceProvider";
+import { useWorkspace } from "@/workspace/WorkspaceProvider";
 import { useAuth } from "@/auth/AuthProvider";
 import { Button, Card, Textarea, Badge } from "@/components/ui";
 import { cn } from "@/lib/cn";
-import type { AgentCard, AgentRouteType, AgentStep, ChatRole, ChatSession, ChatTurn, GraphTopology, NodeStatus, Rating, RetrievalMode, SourceItem, SystemPrompt, TraceSpan } from "@/api/types";
+import type { AgentCard, AgentRouteType, AgentStep, ChatRole, ChatSession, ChatTurn, GraphTopology, McpAction, NodeStatus, PendingApproval, Rating, RetrievalMode, SourceItem, SystemPrompt, TraceSpan } from "@/api/types";
 import { CitedMarkdown } from "@/components/chat/CitedMarkdown";
 import { RunInspector, type RunState } from "@/components/chat/RunInspector";
 import { getAgentTheme } from "@/lib/agentTheme";
+import { isSubmitEnter } from "@/lib/keys";
 import type { ChatLaunchState } from "@/pages/AgentHomePage";
 
 // ── Icons ────────────────────────────────────────────────────────────────────
@@ -71,6 +72,22 @@ function TrashIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" className="h-3.5 w-3.5">
       <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" />
+    </svg>
+  );
+}
+
+function PencilIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className="h-3.5 w-3.5">
+      <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" />
+    </svg>
+  );
+}
+
+function RetryIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className="h-3.5 w-3.5">
+      <path d="M17.65 6.35A7.96 7.96 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z" />
     </svg>
   );
 }
@@ -431,7 +448,7 @@ function AnswerFeedback({
             maxLength={1000}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter") {
+              if (isSubmitEnter(e)) {
                 onRate(-1, draft.trim() || null);
                 setEditing(false);
               }
@@ -455,18 +472,80 @@ function AnswerFeedback({
   );
 }
 
+function EditQuestion({ initial, onSave, onCancel }: { initial: string; onSave: (text: string) => void; onCancel: () => void }) {
+  const [draft, setDraft] = useState(initial);
+  const save = () => draft.trim() && onSave(draft.trim());
+  return (
+    <div className="w-full min-w-[280px] rounded-2xl border border-teal-200 bg-white p-2 dark:border-teal-800 dark:bg-gray-800">
+      <Textarea
+        autoFocus
+        rows={3}
+        className="resize-none text-sm"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (isSubmitEnter(e) && !e.shiftKey) {
+            e.preventDefault();
+            save();
+          } else if (e.key === "Escape") onCancel();
+        }}
+      />
+      <div className="mt-2 flex items-center justify-between gap-2">
+        <span className="text-[10px] text-gray-400">Answers after this question will be replaced.</span>
+        <span className="flex gap-1.5">
+          <Button size="sm" variant="secondary" onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button size="sm" disabled={!draft.trim()} onClick={save}>
+            Send
+          </Button>
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function MessageBubble({
   turn,
   onRate,
+  onEdit,
+  onRegenerate,
+  onDecide,
+  busy = false,
 }: {
   turn: ChatTurn;
+  /** Approve or reject an MCP call this turn is paused on. */
+  onDecide?: (callId: number, approve: boolean, args?: Record<string, unknown>) => void;
+  /** Something is streaming: decisions wait. */
+  busy?: boolean;
   /** Present when this answer can be rated (finished, saved in a session). */
   onRate?: (rating: Rating | null, comment?: string | null) => void;
+  /** User messages: resend this question reworded, replacing what followed it. */
+  onEdit?: (text: string) => void;
+  /** The latest answer: ask its question again for a fresh answer. */
+  onRegenerate?: () => void;
 }) {
   const isUser = turn.role === "user";
+  const [editing, setEditing] = useState(false);
+  if (isUser && editing && onEdit) {
+    return (
+      <div className="flex justify-end">
+        <div className="max-w-[80%]">
+          <EditQuestion
+            initial={turn.content}
+            onCancel={() => setEditing(false)}
+            onSave={(text) => {
+              setEditing(false);
+              onEdit(text);
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
   return (
     <div className={cn("flex", isUser ? "justify-end" : "justify-start")}>
-      <div className={cn("max-w-[80%]", isUser ? "order-2" : "order-1")}>
+      <div className={cn("group max-w-[80%]", isUser ? "order-2" : "order-1")}>
         {!isUser && turn.isStreaming && !turn.agentRoute && (
           <AgentFlowDiagram
             agentRoute={turn.agentRoute}
@@ -478,6 +557,7 @@ function MessageBubble({
           <AgentRouteBadge agentRoute={turn.agentRoute} isActive={turn.isStreaming} />
         )}
         {!isUser && <AgentSteps steps={turn.agentSteps} />}
+        {!isUser && turn.actions && turn.actions.length > 0 && <McpActions actions={turn.actions} />}
         <div
           className={cn(
             "rounded-2xl px-4 py-3 text-sm",
@@ -490,6 +570,10 @@ function MessageBubble({
             <p className="whitespace-pre-wrap">{turn.content}</p>
           ) : turn.isStreaming && !turn.content ? (
             <StreamingStatus turn={turn} />
+          ) : turn.approvals?.length && !turn.content ? (
+            <p className="text-gray-500 dark:text-gray-400">
+              {turn.approvals.length === 1 ? "This action needs" : "These actions need"} your approval before I continue.
+            </p>
           ) : turn.error ? (
             <p className="text-red-500">{turn.error}</p>
           ) : (
@@ -498,8 +582,177 @@ function MessageBubble({
             </div>
           )}
         </div>
+        {isUser && onEdit && (
+          <div className="mt-1 flex justify-end transition-opacity md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100">
+            <button
+              onClick={() => setEditing(true)}
+              title="Edit this question and ask again"
+              className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-700"
+            >
+              <PencilIcon /> Edit
+            </button>
+          </div>
+        )}
+        {!isUser &&
+          turn.approvals?.map((a) => (
+            <ApprovalCard key={a.call_id} approval={a} busy={busy} onDecide={(ok, args) => onDecide?.(a.call_id, ok, args)} />
+          ))}
         {!isUser && <Sources sources={turn.sources} />}
-        {!isUser && onRate && <AnswerFeedback feedback={turn.feedback} onRate={onRate} />}
+        {!isUser && (onRate || onRegenerate) && (
+          <div className="flex flex-wrap items-start gap-2">
+            {onRate && <AnswerFeedback feedback={turn.feedback} onRate={onRate} />}
+            {onRegenerate && (
+              <button
+                onClick={onRegenerate}
+                title="Ask the same question again for a new answer"
+                className="mt-1.5 flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-700"
+              >
+                <RetryIcon /> Regenerate
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── MCP actions and approvals ────────────────────────────────────────────────
+
+const ACTION_STATUS: Record<McpAction["status"], { label: string; cls: string }> = {
+  running: { label: "running", cls: "text-amber-600 dark:text-amber-400 animate-pulse" },
+  waiting: { label: "awaiting approval", cls: "text-violet-600 dark:text-violet-300" },
+  done: { label: "done", cls: "text-teal-600 dark:text-teal-400" },
+  error: { label: "failed", cls: "text-red-500" },
+};
+
+function formatArgs(args: Record<string, unknown>) {
+  return Object.entries(args)
+    .filter(([, v]) => v !== "" && v != null)
+    .map(([k, v]) => `${k}=${typeof v === "string" ? v : JSON.stringify(v)}`)
+    .join(", ");
+}
+
+/** MCP tool calls in a turn — what the agent did outside the documents. */
+function McpActions({ actions }: { actions: McpAction[] }) {
+  const [open, setOpen] = useState<string | null>(null);
+  return (
+    <div className="mb-2 space-y-1 rounded-xl border border-violet-100 bg-violet-50/50 px-3 py-2 text-xs dark:border-violet-900/50 dark:bg-violet-900/10">
+      {actions.map((a) => {
+        const st = ACTION_STATUS[a.status];
+        return (
+          <div key={a.id}>
+            <button
+              onClick={() => setOpen(open === a.id ? null : a.id)}
+              disabled={!a.output}
+              className="flex w-full items-start gap-2 text-left disabled:cursor-default"
+            >
+              <span className="text-violet-500">⚙</span>
+              <span className="min-w-0 flex-1 text-gray-600 dark:text-gray-300">
+                <span className="font-semibold">{a.tool}</span>
+                <span className="text-gray-400"> · {a.server}</span>
+                {Object.keys(a.args).length > 0 && (
+                  <span className="block truncate font-mono text-[11px] text-gray-400">{formatArgs(a.args)}</span>
+                )}
+              </span>
+              <span className={cn("shrink-0 font-medium", st.cls)}>{st.label}</span>
+            </button>
+            {open === a.id && a.output && (
+              <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap rounded-lg bg-white p-2 font-mono text-[11px] text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+                {a.output}
+              </pre>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** A paused MCP call: show exactly what will run, let the user fix the arguments, then decide. */
+function ApprovalCard({
+  approval,
+  busy,
+  onDecide,
+}: {
+  approval: PendingApproval;
+  busy: boolean;
+  onDecide: (approve: boolean, args?: Record<string, unknown>) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(() => JSON.stringify(approval.args, null, 2));
+  const [error, setError] = useState<string | null>(null);
+
+  const approve = () => {
+    if (!editing) return onDecide(true);
+    try {
+      const parsed = JSON.parse(draft);
+      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new Error("must be a JSON object");
+      onDecide(true, parsed as Record<string, unknown>);
+    } catch (e) {
+      setError(`Arguments aren't valid JSON: ${(e as Error).message}`);
+    }
+  };
+
+  return (
+    <div className="mt-2 rounded-xl border border-violet-300 bg-white p-3 text-sm shadow-sm dark:border-violet-700 dark:bg-gray-800">
+      <div className="mb-2 flex flex-wrap items-baseline gap-x-2">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-violet-600 dark:text-violet-300">
+          Approval needed
+        </span>
+        <span className="font-semibold text-gray-800 dark:text-gray-100">{approval.title || approval.tool}</span>
+        <span className="text-xs text-gray-400">
+          {approval.server} · <span className="font-mono">{approval.tool}</span>
+        </span>
+      </div>
+      {editing ? (
+        <textarea
+          id={`approval-args-${approval.call_id}`}
+          value={draft}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            setError(null);
+          }}
+          rows={Math.min(12, draft.split("\n").length + 1)}
+          className="w-full rounded-lg border border-gray-200 bg-gray-50 p-2 font-mono text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-violet-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200"
+        />
+      ) : (
+        <dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-3 gap-y-1 rounded-lg bg-gray-50 p-2 text-xs dark:bg-gray-900">
+          {Object.entries(approval.args).map(([k, v]) => (
+            <div key={k} className="contents">
+              <dt className="font-mono text-gray-400">{k}</dt>
+              <dd className="break-words text-gray-700 dark:text-gray-200">
+                {v === "" || v == null ? <span className="text-gray-300">—</span> : typeof v === "string" ? v : JSON.stringify(v)}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      {error && <p className="mt-1 text-xs text-red-500">{error}</p>}
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <button
+          onClick={approve}
+          disabled={busy}
+          className="rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-700 disabled:opacity-50"
+        >
+          {editing ? "Approve with changes" : "Approve"}
+        </button>
+        <button
+          onClick={() => onDecide(false)}
+          disabled={busy}
+          className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+        >
+          Reject
+        </button>
+        {!editing && (
+          <button
+            onClick={() => setEditing(true)}
+            disabled={busy}
+            className="ml-auto text-xs text-gray-400 hover:text-gray-600 disabled:opacity-50"
+          >
+            Edit arguments
+          </button>
+        )}
       </div>
     </div>
   );
@@ -563,8 +816,9 @@ function SessionSidebar({
                   : "text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700/50",
               )}
             >
-              <span className="flex-1 truncate">
-                {session.title ?? formatSessionDate(session.updated_at)}
+              <span className="min-w-0 flex-1" title={session.title ?? undefined}>
+                <span className="block truncate">{session.title ?? "New chat"}</span>
+                <span className="block text-[10px] opacity-60">{formatSessionDate(session.updated_at)}</span>
               </span>
               <button
                 className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100 hover:text-red-500"
@@ -586,11 +840,11 @@ function SessionSidebar({
 // ── System prompts panel ─────────────────────────────────────────────────────
 
 function SystemPromptsPanel({
-  serviceId,
+  agentId,
   onClose,
   isAdmin,
 }: {
-  serviceId: number;
+  agentId: number;
   onClose: () => void;
   isAdmin: boolean;
 }) {
@@ -600,32 +854,32 @@ function SystemPromptsPanel({
   const [creating, setCreating] = useState(false);
 
   const { data: prompts = [], isLoading } = useQuery({
-    queryKey: ["system-prompts", serviceId],
-    queryFn: () => SystemPromptsApi.list(serviceId),
+    queryKey: ["system-prompts", agentId],
+    queryFn: () => SystemPromptsApi.list(agentId),
   });
 
   const activate = useMutation({
-    mutationFn: (id: number) => SystemPromptsApi.activate(serviceId, id),
+    mutationFn: (id: number) => SystemPromptsApi.activate(agentId, id),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["system-prompts", serviceId] });
+      qc.invalidateQueries({ queryKey: ["system-prompts", agentId] });
       toast.success("System prompt activated");
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
   });
 
   const remove = useMutation({
-    mutationFn: (id: number) => SystemPromptsApi.remove(serviceId, id),
+    mutationFn: (id: number) => SystemPromptsApi.remove(agentId, id),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["system-prompts", serviceId] });
+      qc.invalidateQueries({ queryKey: ["system-prompts", agentId] });
       toast.success("Deleted");
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
   });
 
   const create = useMutation({
-    mutationFn: () => SystemPromptsApi.create(serviceId, { name: newName, content: newContent }),
+    mutationFn: () => SystemPromptsApi.create(agentId, { name: newName, content: newContent }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["system-prompts", serviceId] });
+      qc.invalidateQueries({ queryKey: ["system-prompts", agentId] });
       setNewName("");
       setNewContent("");
       setCreating(false);
@@ -786,11 +1040,20 @@ const EMPTY_RUN: RunState = { topology: null, nodeStatus: {}, delegateStates: {}
 // ── Main page ────────────────────────────────────────────────────────────────
 
 export default function ChatPage() {
-  const { current: service } = useService();
+  const { agent, agents, selectAgent } = useWorkspace();
   const { user } = useAuth();
   const qc = useQueryClient();
 
-  const [activeSessionId, setActiveSessionId] = useState<number | null>(null);
+  // The open session, tagged with the agent it belongs to. When the agent
+  // changes, effects run once before any reset lands; tagging makes the old
+  // agent's session read as "none" in that render instead of being requested
+  // under the new agent (a 404).
+  const [activeSession, setActiveSession] = useState<{ agentId: number; id: number } | null>(null);
+  const activeSessionId = activeSession && activeSession.agentId === agent?.id ? activeSession.id : null;
+  const setActiveSessionId = useCallback(
+    (id: number | null) => setActiveSession(id == null || !agent ? null : { agentId: agent.id, id }),
+    [agent],
+  );
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [input, setInput] = useState("");
@@ -798,14 +1061,14 @@ export default function ChatPage() {
   const [showPrompts, setShowPrompts] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [retrievalMode, setRetrievalMode] = useState<RetrievalMode>(
-    service?.agent_config.default_retrieval_mode ?? "auto",
+    agent?.agent_config.default_retrieval_mode ?? "auto",
   );
   // Execution graph for the most recent run: its shape, plus where the run is.
   const [run, setRun] = useState<RunState>(EMPTY_RUN);
   const [showGraph, setShowGraph] = useState(true);
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const prevServiceIdRef = useRef<number | null>(null);
+  const prevAgentIdRef = useRef<number | null>(null);
   // A session sendMessage just created: empty on the server, so the
   // load-messages effect must not reload it over the turns being streamed in.
   const freshSessionRef = useRef<number | null>(null);
@@ -819,22 +1082,22 @@ export default function ChatPage() {
   const isAdmin = user?.is_superadmin || false;
 
   const { data: prompts = [] } = useQuery({
-    queryKey: ["system-prompts", service?.id],
-    queryFn: () => SystemPromptsApi.list(service!.id),
-    enabled: !!service,
+    queryKey: ["system-prompts", agent?.id],
+    queryFn: () => SystemPromptsApi.list(agent!.id),
+    enabled: !!agent,
   });
   const activePrompt = prompts.find((p) => p.is_active);
 
   const { data: sessions = [], isSuccess: sessionsLoaded } = useQuery({
-    queryKey: ["sessions", service?.id],
-    queryFn: () => SessionsApi.list(service!.id),
-    enabled: !!service,
+    queryKey: ["sessions", agent?.id],
+    queryFn: () => SessionsApi.list(agent!.id),
+    enabled: !!agent,
   });
 
   const createSession = useMutation({
-    mutationFn: () => SessionsApi.create(service!.id),
+    mutationFn: () => SessionsApi.create(agent!.id),
     onSuccess: (session) => {
-      qc.invalidateQueries({ queryKey: ["sessions", service?.id] });
+      qc.invalidateQueries({ queryKey: ["sessions", agent?.id] });
       setActiveSessionId(session.id);
       setTurns([]);
     },
@@ -842,9 +1105,9 @@ export default function ChatPage() {
   });
 
   const deleteSession = useMutation({
-    mutationFn: (sessionId: number) => SessionsApi.remove(service!.id, sessionId),
+    mutationFn: (sessionId: number) => SessionsApi.remove(agent!.id, sessionId),
     onSuccess: (_, deletedId) => {
-      qc.invalidateQueries({ queryKey: ["sessions", service?.id] });
+      qc.invalidateQueries({ queryKey: ["sessions", agent?.id] });
       if (activeSessionId === deletedId) {
         const remaining = sessions.filter((s) => s.id !== deletedId);
         if (remaining.length > 0) {
@@ -858,25 +1121,25 @@ export default function ChatPage() {
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to delete session"),
   });
 
-  // Reset when service changes
+  // Reset when the agent changes
   useEffect(() => {
-    if (!service) return;
-    if (service.id === prevServiceIdRef.current) return;
-    prevServiceIdRef.current = service.id;
+    if (!agent) return;
+    if (agent.id === prevAgentIdRef.current) return;
+    prevAgentIdRef.current = agent.id;
     setActiveSessionId(null);
     setTurns([]);
-    setRetrievalMode(service.agent_config.default_retrieval_mode);
-  }, [service?.id]);
+    setRetrievalMode(agent.agent_config.default_retrieval_mode);
+  }, [agent?.id]);
 
   // Send the landing page's starter question once, in a fresh session.
   useEffect(() => {
     const prompt = launchPromptRef.current;
-    if (!prompt || !service) return;
+    if (!prompt || !agent) return;
     launchPromptRef.current = null;
     navigate(location.pathname, { replace: true, state: null }); // a reload must not resend it
     void sendMessage(prompt, { newSession: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [service?.id]);
+  }, [agent?.id]);
 
   // Lift the auto-select hold only once the new session is committed. Clearing
   // it right after creation races the session-list refetch: react-query renders
@@ -896,7 +1159,7 @@ export default function ChatPage() {
 
   // Load messages from DB when active session changes
   useEffect(() => {
-    if (!service || !activeSessionId) {
+    if (!agent || !activeSessionId) {
       setTurns([]);
       return;
     }
@@ -910,21 +1173,32 @@ export default function ChatPage() {
     setLoadingMessages(true);
     setTurns([]);
 
-    SessionsApi.messages(service.id, activeSessionId)
-      .then((messages) => {
+    Promise.all([SessionsApi.messages(agent.id, activeSessionId), SessionsApi.pendingApprovals(agent.id, activeSessionId)])
+      .then(([messages, pending]) => {
         if (cancelled) return;
-        setTurns(
-          messages.map((m) => ({
+        const loaded: ChatTurn[] = messages.map((m) => ({
+          id: crypto.randomUUID(),
+          role: m.role as ChatRole,
+          content: m.content,
+          agentSteps: [],
+          sources: m.sources ?? [],
+          isStreaming: false,
+          turnIndex: m.turn_index ?? undefined,
+          feedback: m.feedback,
+        }));
+        // A turn paused on an approval has no answer yet: show it waiting.
+        if (pending.length) {
+          loaded.push({
             id: crypto.randomUUID(),
-            role: m.role as ChatRole,
-            content: m.content,
+            role: "assistant",
+            content: "",
             agentSteps: [],
-            sources: m.sources ?? [],
+            sources: [],
             isStreaming: false,
-            turnIndex: m.turn_index ?? undefined,
-            feedback: m.feedback,
-          })),
-        );
+            approvals: pending.map((c) => ({ call_id: c.id, server: c.server_name, tool: c.tool, args: c.args })),
+          });
+        }
+        setTurns(loaded);
       })
       .catch(() => {
         if (!cancelled) toast.error("Failed to load messages");
@@ -936,30 +1210,43 @@ export default function ChatPage() {
     return () => {
       cancelled = true;
     };
-  }, [activeSessionId, service?.id]);
+  }, [activeSessionId, agent?.id]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [turns]);
 
   async function rateTurn(turnId: string, turnIndex: number, rating: Rating | null, comment?: string | null) {
-    if (!service || !activeSessionId) return;
+    if (!agent || !activeSessionId) return;
     const before = turns.find((t) => t.id === turnId)?.feedback ?? null;
     const next = rating == null ? null : { rating, comment: comment === undefined ? (before?.comment ?? null) : comment };
     // Optimistic: the thumb lights up immediately, and reverts if the save fails.
     setTurns((prev) => prev.map((t) => (t.id === turnId ? { ...t, turnIndex, feedback: next } : t)));
     try {
-      if (next == null) await SessionsApi.clearRating(service.id, activeSessionId, turnIndex);
-      else await SessionsApi.rate(service.id, activeSessionId, turnIndex, next.rating, next.comment);
+      if (next == null) await SessionsApi.clearRating(agent.id, activeSessionId, turnIndex);
+      else await SessionsApi.rate(agent.id, activeSessionId, turnIndex, next.rating, next.comment);
     } catch (e) {
       setTurns((prev) => prev.map((t) => (t.id === turnId ? { ...t, feedback: before } : t)));
       toast.error(e instanceof Error ? e.message : "Couldn't save your rating");
     }
   }
 
-  async function sendMessage(text?: string, opts: { newSession?: boolean } = {}) {
+  /**
+   * `replaceTurn` (0-based, counting user messages) reruns the session from that
+   * question with `text` in its place — editing it, or (with `regenerate`, same
+   * words) asking for a fresh answer, which the server writes a little warmer.
+   */
+  async function sendMessage(
+    text?: string,
+    opts: { newSession?: boolean; replaceTurn?: number; regenerate?: boolean } = {},
+  ) {
     const query = (text ?? input).trim();
-    if (!service || !query || streaming) return;
+    if (!agent || !query || streaming) return;
+    if (opts.replaceTurn == null && !opts.newSession && turns.some((t) => t.approvals?.length)) {
+      toast.error("Approve or reject the pending action first");
+      return;
+    }
+    if (opts.replaceTurn != null && activeSessionId == null) return;
     if (text === undefined) setInput("");
     setStreaming(true);
 
@@ -970,10 +1257,10 @@ export default function ChatPage() {
     if (sessionId == null) {
       suppressAutoSelectRef.current = true;
       try {
-        const session = await SessionsApi.create(service.id);
+        const session = await SessionsApi.create(agent.id);
         freshSessionRef.current = session.id;
         setActiveSessionId(session.id);
-        qc.invalidateQueries({ queryKey: ["sessions", service.id] });
+        qc.invalidateQueries({ queryKey: ["sessions", agent.id] });
         sessionId = session.id;
       } catch (e) {
         suppressAutoSelectRef.current = false;
@@ -1001,30 +1288,63 @@ export default function ChatPage() {
       isStreaming: true,
     };
 
-    setTurns((prev) => (isNewSession ? [userTurn, assistantTurn] : [...prev, userTurn, assistantTurn]));
+    setTurns((prev) => {
+      if (isNewSession) return [userTurn, assistantTurn];
+      if (opts.replaceTurn == null) return [...prev, userTurn, assistantTurn];
+      // Drop the replaced question and everything after it, as the server does.
+      let users = -1;
+      const cut = prev.findIndex((t) => t.role === "user" && ++users === opts.replaceTurn);
+      return [...(cut < 0 ? prev : prev.slice(0, cut)), userTurn, assistantTurn];
+    });
     // The graph is rebuilt per run, so clear the previous run's trace.
     setRun(EMPTY_RUN);
 
     const ctrl = new AbortController();
     abortRef.current = ctrl;
+    try {
+      await consumeStream(
+        SessionsApi.chat(
+          agent.id,
+          sessionId,
+          query,
+          undefined,
+          ctrl.signal,
+          retrievalMode,
+          opts.replaceTurn,
+          opts.regenerate,
+        ),
+        assistantId,
+      );
+    } finally {
+      setStreaming(false);
+      abortRef.current = null;
+      qc.invalidateQueries({ queryKey: ["sessions", agent.id] });
+    }
+  }
+
+  /**
+   * Feed one run's SSE stream into the assistant turn `assistantId`. A resumed
+   * run (after an approval) continues the same turn, so it starts from what
+   * the turn already shows.
+   */
+  async function consumeStream(
+    stream: AsyncGenerator<{ event: string; data: string }>,
+    assistantId: string,
+    from?: ChatTurn,
+  ) {
+    let steps: AgentStep[] = from?.agentSteps ?? [];
+    let sources: SourceItem[] = from?.sources ?? [];
+    let actions: McpAction[] = from?.actions ?? [];
+    let content = "";
+    let topology: GraphTopology | null = null;
+    // Delegate tool name → agent name, for readable step labels.
+    const delegateName = (tool: string) =>
+      topology?.nodes.find((n) => n.id === `delegate:${tool.replace("ask_agent_", "")}`)?.label ?? tool;
+    const patch = (fields: Partial<ChatTurn>) =>
+      setTurns((prev) => prev.map((t) => (t.id === assistantId ? { ...t, ...fields } : t)));
 
     try {
-      let steps: AgentStep[] = [];
-      let sources: SourceItem[] = [];
-      let content = "";
-      let topology: GraphTopology | null = null;
-      // Delegate tool name → agent name, for readable step labels.
-      const delegateName = (tool: string) =>
-        topology?.nodes.find((n) => n.id === `delegate:${tool.replace("ask_agent_", "")}`)?.label ?? tool;
-
-      for await (const { event, data } of SessionsApi.chat(
-        service.id,
-        sessionId,
-        query,
-        undefined,
-        ctrl.signal,
-        retrievalMode,
-      )) {
+      for await (const { event, data } of stream) {
         if (event === "graph") {
           topology = JSON.parse(data) as GraphTopology;
           const shape = topology;
@@ -1055,9 +1375,7 @@ export default function ChatPage() {
           }));
         } else if (event === "supervisor_route") {
           const payload = JSON.parse(data) as { agent_type: AgentRouteType };
-          setTurns((prev) =>
-            prev.map((t) => (t.id === assistantId ? { ...t, agentRoute: payload.agent_type } : t)),
-          );
+          patch({ agentRoute: payload.agent_type });
         } else if (event === "agent_step") {
           const payload = JSON.parse(data) as { type: string; tool: string; input?: string; output?: SourceItem[] };
           const isDelegate = payload.tool.startsWith("ask_agent_");
@@ -1068,57 +1386,77 @@ export default function ChatPage() {
             input: payload.input,
             output: payload.output,
           };
+          // A resumed run repeats the turn's opening search; don't list it twice.
+          if (from && steps.some((s) => s.type === step.type && s.tool === step.tool && s.input === step.input)) continue;
           steps = [...steps, step];
-          // A delegate's sources are numbered in its own answer, not ours, so
-          // they stay in its step instead of joining this answer's citations.
-          if (payload.type === "observation" && payload.output && !isDelegate) {
+          // A delegate's sources arrive renumbered into this answer's sequence,
+          // so they join its citations like our own searches.
+          if (payload.type === "observation" && payload.output) {
             sources = [...sources, ...payload.output];
           }
           // Text streamed before a tool call is the model narrating its plan
           // ("let me search…") — or a tool call it printed as text. The answer
           // starts after the last tool call, so drop it.
           if (payload.type === "tool_call") content = "";
+          patch({ agentSteps: steps, content, sources });
+        } else if (event === "mcp_call") {
+          const p = JSON.parse(data) as McpAction;
+          const known = actions.some((a) => a.id === p.id);
+          actions = known
+            ? actions.map((a) => (a.id === p.id ? { ...a, status: p.status, output: p.output } : a))
+            : [...actions, p];
+          if (p.status === "running") content = ""; // same as a search: what came before was narration
+          patch({ actions, content });
+        } else if (event === "approval_required") {
+          const p = JSON.parse(data) as PendingApproval;
           setTurns((prev) =>
-            prev.map((t) => (t.id === assistantId ? { ...t, agentSteps: steps, content, sources } : t)),
+            prev.map((t) =>
+              t.id === assistantId ? { ...t, approvals: [...(t.approvals ?? []).filter((a) => a.call_id !== p.call_id), p] } : t,
+            ),
           );
         } else if (event === "token") {
           const payload = JSON.parse(data) as { delta: string };
           content += payload.delta;
-          setTurns((prev) =>
-            prev.map((t) => (t.id === assistantId ? { ...t, content } : t)),
-          );
+          patch({ content });
         } else if (event === "done") {
-          setTurns((prev) =>
-            prev.map((t) =>
-              t.id === assistantId ? { ...t, isStreaming: false, sources } : t,
-            ),
-          );
+          const payload = JSON.parse(data) as { finish_reason: string };
+          // Paused for approval: the answer comes with the resume, so drop the narration.
+          patch(payload.finish_reason === "approval_required" ? { isStreaming: false, content: "", sources } : { isStreaming: false, sources });
         } else if (event === "error") {
           const payload = JSON.parse(data) as { error: string };
-          setTurns((prev) =>
-            prev.map((t) =>
-              t.id === assistantId ? { ...t, isStreaming: false, error: payload.error } : t,
-            ),
-          );
+          patch({ isStreaming: false, error: payload.error });
         }
       }
     } catch (e) {
-      if ((e as Error).name !== "AbortError") {
-        setTurns((prev) =>
-          prev.map((t) =>
-            t.id === assistantId ? { ...t, isStreaming: false, error: String(e) } : t,
-          ),
-        );
-      }
+      if ((e as Error).name !== "AbortError") patch({ isStreaming: false, error: String(e) });
+    }
+  }
+
+  /** Approve or reject a call the paused turn waits on, and stream the rest of the turn. */
+  async function decideApproval(turn: ChatTurn, callId: number, approve: boolean, args?: Record<string, unknown>) {
+    if (!agent || activeSessionId == null || streaming) return;
+    setStreaming(true);
+    const remaining = (turn.approvals ?? []).filter((a) => a.call_id !== callId);
+    setTurns((prev) =>
+      prev.map((t) => (t.id === turn.id ? { ...t, approvals: remaining, isStreaming: true, error: undefined } : t)),
+    );
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+    try {
+      await consumeStream(
+        SessionsApi.decide(agent.id, activeSessionId, [{ call_id: callId, approve, args: approve ? args : null }], ctrl.signal),
+        turn.id,
+        turn,
+      );
     } finally {
       setStreaming(false);
       abortRef.current = null;
-      qc.invalidateQueries({ queryKey: ["sessions", service.id] });
+      qc.invalidateQueries({ queryKey: ["sessions", agent.id] });
     }
   }
 
   function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (isSubmitEnter(e) && !e.shiftKey) {
       e.preventDefault();
       sendMessage();
     }
@@ -1169,7 +1507,7 @@ export default function ChatPage() {
             onDelete={(id) => deleteSession.mutate(id)}
             onNew={() => createSession.mutate()}
             creating={createSession.isPending}
-            disabled={!service}
+            disabled={!agent}
             onClose={() => setSidebarOpen(false)}
           />
         </Card>
@@ -1186,13 +1524,32 @@ export default function ChatPage() {
             >
               <MenuIcon />
             </button>
-            {service && (
+            {agent && (
               <span className="flex items-center gap-1.5 text-sm font-semibold text-[#2D3748] dark:text-gray-100">
-                <span>{getAgentTheme(service).icon}</span>
-                {service.name}
+                <span>{getAgentTheme(agent).icon}</span>
+                {agents.length > 1 ? (
+                  // Switch agents without leaving the chat; each keeps its own sessions.
+                  <select
+                    aria-label="Agent"
+                    value={agent.id}
+                    onChange={(e) => {
+                      const next = agents.find((a) => a.id === Number(e.target.value));
+                      if (next) selectAgent(next);
+                    }}
+                    className="rounded-lg border border-transparent bg-transparent py-0.5 pr-6 text-sm font-semibold hover:border-gray-200 focus:outline-none dark:hover:border-gray-600"
+                  >
+                    {agents.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  agent.name
+                )}
               </span>
             )}
-            {service && <Badge tone="slate">{service.model_label}</Badge>}
+            {agent && <Badge tone="slate">{agent.model_label}</Badge>}
             {activePrompt ? (
               <Badge tone="green">{activePrompt.name}</Badge>
             ) : (
@@ -1223,7 +1580,7 @@ export default function ChatPage() {
         {/* Messages */}
         <Card className="flex flex-1 flex-col overflow-hidden">
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            {!service ? (
+            {!agent ? (
               <div className="flex h-full items-center justify-center text-sm text-gray-400">
                 Select an agent to start chatting.
               </div>
@@ -1236,21 +1593,40 @@ export default function ChatPage() {
                 </span>
               </div>
             ) : turns.length === 0 ? (
-              <AgentWelcome agent={service} onAsk={(q) => void sendMessage(q)} />
+              <AgentWelcome agent={agent} onAsk={(q) => void sendMessage(q)} />
             ) : (
               (() => {
                 // Answers streamed in this view have no index from the server yet;
                 // number them the way the server does — finished answers only.
                 let answers = 0;
-                return turns.map((turn) => {
+                // User messages are counted the same way for edit/regenerate.
+                let users = -1;
+                let lastQuestion: { index: number; content: string } | null = null;
+                const canRerun = !streaming && activeSessionId != null;
+                return turns.map((turn, i) => {
                   const rateable = turn.role === "assistant" && !turn.isStreaming && !turn.error && !!turn.content;
                   const index = rateable ? (turn.turnIndex ?? answers) : undefined;
                   if (rateable) answers = index! + 1;
+                  if (turn.role === "user") lastQuestion = { index: ++users, content: turn.content };
+                  const question = lastQuestion;
+                  const isLatestAnswer = turn.role === "assistant" && i === turns.length - 1;
                   return (
                     <MessageBubble
                       key={turn.id}
                       turn={turn}
                       onRate={index != null ? (r, c) => void rateTurn(turn.id, index, r, c) : undefined}
+                      onEdit={
+                        turn.role === "user" && canRerun
+                          ? (text) => void sendMessage(text, { replaceTurn: question!.index })
+                          : undefined
+                      }
+                      onRegenerate={
+                        isLatestAnswer && canRerun && question && !turn.approvals?.length
+                          ? () => void sendMessage(question.content, { replaceTurn: question.index, regenerate: true })
+                          : undefined
+                      }
+                      busy={streaming}
+                      onDecide={turn.approvals?.length ? (id, ok, args) => void decideApproval(turn, id, ok, args) : undefined}
                     />
                   );
                 });
@@ -1283,14 +1659,14 @@ export default function ChatPage() {
                 rows={2}
                 className="resize-none text-sm"
                 placeholder={
-                  !service
+                  !agent
                     ? "Select an agent first"
-                    : `Ask ${service.name}… (Enter to send, Shift+Enter for newline)`
+                    : `Ask ${agent.name}… (Enter to send, Shift+Enter for newline)`
                 }
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                disabled={!service || streaming}
+                disabled={!agent || streaming}
               />
               {streaming ? (
                 <Button variant="danger" onClick={stopStream} className="self-end">
@@ -1299,7 +1675,7 @@ export default function ChatPage() {
               ) : (
                 <Button
                   onClick={() => void sendMessage()}
-                  disabled={!service || !input.trim()}
+                  disabled={!agent || !input.trim()}
                   className="self-end flex items-center gap-1.5"
                 >
                   <SendIcon />
@@ -1321,11 +1697,11 @@ export default function ChatPage() {
       )}
 
       {/* System prompts panel */}
-      {showPrompts && service && (
+      {showPrompts && agent && (
         <div className="fixed inset-y-0 right-0 z-50 w-full max-w-sm md:static md:w-80 md:shrink-0 md:z-auto">
           <Card className="flex h-full flex-col overflow-hidden rounded-none md:rounded-2xl">
             <SystemPromptsPanel
-              serviceId={service.id}
+              agentId={agent.id}
               onClose={() => setShowPrompts(false)}
               isAdmin={isAdmin}
             />

@@ -1,27 +1,27 @@
 import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ServicesApi, UsersApi } from "@/api/endpoints";
+import { WorkspacesApi, UsersApi } from "@/api/endpoints";
 import { Button, Card, FormField, SectionHeading, Select } from "@/components/ui";
 import { DataTable, type Column } from "@/components/DataTable";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { useService } from "@/services/ServiceProvider";
-import type { ServiceMember, ServiceRole } from "@/api/types";
+import { useWorkspace } from "@/workspace/WorkspaceProvider";
+import type { WorkspaceMember, WorkspaceRole } from "@/api/types";
 
-const ROLES: ServiceRole[] = ["admin", "member", "viewer"];
+const ROLES: WorkspaceRole[] = ["admin", "member", "viewer"];
 
 export default function MembersPage() {
   const qc = useQueryClient();
-  const { current: service } = useService();
+  const { workspace } = useWorkspace();
 
   const [selectedUserId, setSelectedUserId] = useState<string>("");
-  const [selectedRole, setSelectedRole] = useState<ServiceRole>("member");
-  const [confirmRemove, setConfirmRemove] = useState<ServiceMember | null>(null);
+  const [selectedRole, setSelectedRole] = useState<WorkspaceRole>("member");
+  const [confirmRemove, setConfirmRemove] = useState<WorkspaceMember | null>(null);
 
   const membersQuery = useQuery({
-    queryKey: ["members", service?.id],
-    queryFn: () => ServicesApi.listMembers(service!.id),
-    enabled: service != null,
+    queryKey: ["members", workspace?.id],
+    queryFn: () => WorkspacesApi.listMembers(workspace!.id),
+    enabled: workspace != null,
   });
 
   const usersQuery = useQuery({
@@ -30,9 +30,9 @@ export default function MembersPage() {
   });
 
   const addMutation = useMutation({
-    mutationFn: () => ServicesApi.addMember(service!.id, Number(selectedUserId), selectedRole),
+    mutationFn: () => WorkspacesApi.addMember(workspace!.id, Number(selectedUserId), selectedRole),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["members", service?.id] });
+      void qc.invalidateQueries({ queryKey: ["members", workspace?.id] });
       setSelectedUserId("");
       setSelectedRole("member");
       toast.success("Member added");
@@ -41,19 +41,19 @@ export default function MembersPage() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ userId, role }: { userId: number; role: ServiceRole }) =>
-      ServicesApi.updateMember(service!.id, userId, role),
+    mutationFn: ({ userId, role }: { userId: number; role: WorkspaceRole }) =>
+      WorkspacesApi.updateMember(workspace!.id, userId, role),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["members", service?.id] });
+      void qc.invalidateQueries({ queryKey: ["members", workspace?.id] });
       toast.success("Role updated");
     },
     onError: (err) => toast.error(err instanceof Error ? err.message : "Failed to update role"),
   });
 
   const removeMutation = useMutation({
-    mutationFn: (userId: number) => ServicesApi.removeMember(service!.id, userId),
+    mutationFn: (userId: number) => WorkspacesApi.removeMember(workspace!.id, userId),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["members", service?.id] });
+      void qc.invalidateQueries({ queryKey: ["members", workspace?.id] });
       toast.success("Member removed");
     },
     onError: (err) => toast.error(err instanceof Error ? err.message : "Failed to remove member"),
@@ -70,7 +70,7 @@ export default function MembersPage() {
   const memberUserIds = new Set(members.map((m) => m.user_id));
   const availableUsers = users.filter((u) => !memberUserIds.has(u.id));
 
-  const MEMBER_COLUMNS: Column<ServiceMember>[] = [
+  const MEMBER_COLUMNS: Column<WorkspaceMember>[] = [
     {
       header: "Email",
       render: (m) => (
@@ -85,7 +85,7 @@ export default function MembersPage() {
         <Select
           value={m.role}
           onChange={(e) =>
-            updateMutation.mutate({ userId: m.user_id, role: e.target.value as ServiceRole })
+            updateMutation.mutate({ userId: m.user_id, role: e.target.value as WorkspaceRole })
           }
           className="w-32"
         >
@@ -111,7 +111,7 @@ export default function MembersPage() {
     },
   ];
 
-  if (!service) return <div className="text-[#A0AEC0]">No agent selected.</div>;
+  if (!workspace) return <div className="text-[#A0AEC0]">No agent selected.</div>;
 
   const confirmRemoveEmail =
     confirmRemove != null
@@ -130,10 +130,10 @@ export default function MembersPage() {
         }}
         onCancel={() => setConfirmRemove(null)}
       >
-        Remove <strong>{confirmRemoveEmail}</strong> from this agent?
+        Remove <strong>{confirmRemoveEmail}</strong> from this workspace?
       </ConfirmDialog>
       <Card className="p-5">
-        <SectionHeading className="mb-3">Add Member — {service.name}</SectionHeading>
+        <SectionHeading className="mb-3">Add Member — {workspace.name}</SectionHeading>
         <form onSubmit={onSubmit} className="grid gap-4 md:grid-cols-3">
           <FormField label="User" htmlFor="user-select" className="md:col-span-2">
             <Select
@@ -154,7 +154,7 @@ export default function MembersPage() {
             <Select
               id="role-select"
               value={selectedRole}
-              onChange={(e) => setSelectedRole(e.target.value as ServiceRole)}
+              onChange={(e) => setSelectedRole(e.target.value as WorkspaceRole)}
             >
               {ROLES.map((r) => (
                 <option key={r} value={r}>
@@ -172,7 +172,7 @@ export default function MembersPage() {
       </Card>
 
       <Card>
-        <DataTable<ServiceMember>
+        <DataTable<WorkspaceMember>
           columns={MEMBER_COLUMNS}
           rows={members}
           rowKey={(m) => m.user_id}

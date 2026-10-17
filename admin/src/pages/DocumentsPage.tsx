@@ -7,7 +7,7 @@ import { Badge, Button, Card, CardHeader, ConfigSection, FormField, Input, Secti
 import { DataTable, type Column } from "@/components/DataTable";
 import { ChunkConfigForm } from "@/components/ChunkConfigForm";
 import { MarkdownPreview } from "@/components/MarkdownPreview";
-import { useService } from "@/services/ServiceProvider";
+import { useWorkspace } from "@/workspace/WorkspaceProvider";
 import { statusTone } from "@/lib/documentStatus";
 import type { ChunkConfig, ChunkPreviewResponse, DocumentSummary } from "@/api/types";
 
@@ -44,15 +44,15 @@ const DOC_COLUMNS: Column<DocumentSummary>[] = [
 
 export default function DocumentsPage() {
   const qc = useQueryClient();
-  const { current: service } = useService();
+  const { workspace } = useWorkspace();
   const [q, setQ] = useState("");
   const [offset, setOffset] = useState(0);
   const limit = 25;
 
   const listQuery = useQuery({
-    queryKey: ["documents", service?.id, { q, limit, offset }],
-    queryFn: () => DocumentsApi.list(service!.id, { q: q || undefined, limit, offset }),
-    enabled: service != null,
+    queryKey: ["documents", workspace?.id, { q, limit, offset }],
+    queryFn: () => DocumentsApi.list(workspace!.id, { q: q || undefined, limit, offset }),
+    enabled: workspace != null,
   });
 
   const [uploading, setUploading] = useState(false);
@@ -85,9 +85,9 @@ export default function DocumentsPage() {
   };
 
   const createDoc = useMutation({
-    mutationFn: (fd: FormData) => DocumentsApi.create(service!.id, fd),
+    mutationFn: (fd: FormData) => DocumentsApi.create(workspace!.id, fd),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["documents", service?.id] });
+      void qc.invalidateQueries({ queryKey: ["documents", workspace?.id] });
       setFile(null);
       setTitle("");
       setDescription("");
@@ -99,7 +99,7 @@ export default function DocumentsPage() {
 
   const onUpload = async (e: FormEvent) => {
     e.preventDefault();
-    if (!service) {
+    if (!workspace) {
       toast.error("No agent selected");
       return;
     }
@@ -137,7 +137,7 @@ export default function DocumentsPage() {
     fileName: file?.name,
   };
 
-  if (!service) {
+  if (!workspace) {
     return <div className="text-[#A0AEC0]">No agent available.</div>;
   }
 

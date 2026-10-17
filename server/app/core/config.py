@@ -138,6 +138,15 @@ class AgentSection(BaseModel):
     # Hard ceiling on tool-call rounds per sub-agent. Caps cost and stops a model
     # that keeps retrieving instead of answering.
     max_iterations: int = 5
+    # Once the not-yet-summarized history passes this many (approximate) tokens,
+    # its older messages are folded into a running summary.
+    history_max_tokens: int = Field(default=3000, ge=500)
+    # The newest messages always reach the model verbatim, summary or not.
+    history_keep_messages: int = Field(default=4, ge=2)
+    # Temperature for a regenerated answer. At the usual 0.0 a regenerate would
+    # reproduce the same answer word for word; this lets it vary while staying
+    # grounded. Only raises the agent's own temperature, never lowers it.
+    regenerate_temperature: float = Field(default=0.5, ge=0.0, le=1.0)
 
 
 class ChatSection(BaseModel):

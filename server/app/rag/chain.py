@@ -19,8 +19,10 @@ from app.vectorstore import SearchHit, get_vectorstore
 class SearchQuery:
     query: str
     top_k: int
-    service_id: int | None = None
+    workspace_id: int | None = None
     document_id: int | None = None
+    # Restrict to these documents (an agent's document sets); None = no limit.
+    document_ids: list[int] | None = None
 
 
 def _enrich(db: Session, hits: list[SearchHit]) -> list[EnrichedHit]:
@@ -43,8 +45,9 @@ def build_search_chain(db: Session):
         hits = vs.search(
             vector=vec,
             top_k=fetch_k,
-            service_id=q.service_id,
+            workspace_id=q.workspace_id,
             document_id=q.document_id,
+            document_ids=q.document_ids,
             query_text=q.query,
         )
         return {"query": q, "hits": hits}

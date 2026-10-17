@@ -63,7 +63,8 @@ def index_document(db: Session, document: Document, docs: list) -> None:
         payloads = [
             {
                 "document_id": document.id,
-                "service_id": document.service_id,
+                # The workspace, under its pre-rename key (see QdrantStore.search).
+                "service_id": document.workspace_id,
                 "ordinal": c.ordinal,
                 "text": c.text,
                 "source_metadata": c.metadata,

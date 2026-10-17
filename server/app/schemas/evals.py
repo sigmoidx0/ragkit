@@ -74,7 +74,7 @@ class EvalRunOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    service_id: int
+    agent_id: int
     name: str
     status: str
     config_snapshot: AgentConfig

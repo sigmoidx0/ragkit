@@ -27,8 +27,10 @@ class NodeDescriptor:
 @dataclass
 class ExecutionContext:
     db: Session
-    service_id: int
+    workspace_id: int
     run_inputs: dict[str, Any] = field(default_factory=dict)
+    # Documents the run may retrieve from (an agent's document sets); None = all.
+    document_ids: list[int] | None = None
 
 
 @runtime_checkable

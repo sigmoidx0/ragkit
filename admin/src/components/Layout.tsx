@@ -1,24 +1,16 @@
 import { useState, useEffect, useRef, type ReactNode } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "@/auth/AuthProvider";
-import { useService } from "@/services/ServiceProvider";
+import { useWorkspace } from "@/workspace/WorkspaceProvider";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/cn";
 import { getAgentTheme } from "@/lib/agentTheme";
-import type { AgentCard } from "@/api/types";
+import type { WorkspaceWithRole } from "@/api/types";
 
 function FileIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" className="h-full w-full">
       <path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z" />
-    </svg>
-  );
-}
-
-function SearchIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor" className="h-full w-full">
-      <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" />
     </svg>
   );
 }
@@ -51,17 +43,6 @@ function BeakerIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" className="h-full w-full">
       <path d="M14.5 2.5v6.5l4.5 8H5L9.5 9V2.5h5zm1-1.5H8.5v1H5v1.5h14V2H14.5V1zM5.09 15h13.82L16 9.5V3h-1.5v6.5L17 15H7L9.5 9.5V3H8v6.5L5.09 15z" />
-    </svg>
-  );
-}
-
-function FlowIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor" className="h-full w-full">
-      <circle cx="5" cy="12" r="2.5" />
-      <circle cx="19" cy="5" r="2.5" />
-      <circle cx="19" cy="19" r="2.5" />
-      <path d="M7.5 12h4M13.5 5H10a2 2 0 00-2 2v3M10 17a2 2 0 002 2h1.5" strokeWidth="1.5" stroke="currentColor" fill="none" strokeLinecap="round" />
     </svg>
   );
 }
@@ -122,6 +103,14 @@ function SlidersIcon() {
   );
 }
 
+function PlugIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4">
+      <path d="M16 7V3h-2v4h-4V3H8v4H7a1 1 0 0 0-1 1v4a6 6 0 0 0 5 5.91V22h2v-4.09A6 6 0 0 0 18 12V8a1 1 0 0 0-1-1h-1z" />
+    </svg>
+  );
+}
+
 function MoonIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4">
@@ -142,14 +131,15 @@ function ChevronDownIcon({ open }: { open: boolean }) {
   );
 }
 
-function ServiceSwitcher({
-  services,
+/** Picks the workspace whose agents, documents and members the app shows. */
+function WorkspaceSwitcher({
+  workspaces,
   current,
   select,
 }: {
-  services: AgentCard[];
-  current: AgentCard | null;
-  select: (s: AgentCard) => void;
+  workspaces: WorkspaceWithRole[];
+  current: WorkspaceWithRole | null;
+  select: (w: WorkspaceWithRole) => void;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -177,22 +167,22 @@ function ServiceSwitcher({
         </div>
         <div className="flex-1 min-w-0 text-left">
           <p className="truncate text-xs font-bold text-[#2D3748] dark:text-gray-100">
-            {current?.name ?? "서비스 선택"}
+            {current?.name ?? "Select a workspace"}
           </p>
           {current && (
-            <p className="text-[10px] capitalize text-[#A0AEC0]">{current.role}</p>
+            <p className="text-[10px] text-[#A0AEC0]">Workspace · <span className="capitalize">{current.role}</span></p>
           )}
         </div>
-        {services.length > 1 && (
+        {workspaces.length > 1 && (
           <span className="text-[#A0AEC0]">
             <ChevronDownIcon open={open} />
           </span>
         )}
       </button>
 
-      {open && services.length > 1 && (
+      {open && workspaces.length > 1 && (
         <div className="absolute left-4 right-4 top-full z-50 mt-1 overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-800">
-          {services.map((s) => {
+          {workspaces.map((s) => {
             const t = getAgentTheme(s);
             const isSelected = s.id === current?.id;
             return (
@@ -230,17 +220,33 @@ function ServiceSwitcher({
 
 const PAGE_NAMES: Record<string, string> = {
   "/": "Agents",
-  "/agent-settings": "Agent Settings",
-  "/evals": "Evaluate",
-  "/documents": "Documents",
-  "/search": "Search",
   "/chat": "Chat",
-  "/playground": "Playground",
-  "/pipeline": "Pipeline Builder",
+  "/documents": "Documents",
+  "/document-sets": "Document Sets",
+  "/agent-settings": "Agent Settings",
+  "/lab": "Retrieval Lab",
+  "/evals": "Evaluate",
+  "/mcp": "MCP Servers",
   "/members": "Members",
   "/users": "Users",
-  "/services": "Manage Agents",
+  "/workspaces": "Workspaces",
 };
+
+function NavGroup({ label }: { label: string }) {
+  return (
+    <div className="px-2 pb-1 pt-3 first:pt-1">
+      <span className="text-[10px] font-bold tracking-widest text-[#A0AEC0] dark:text-gray-500">{label}</span>
+    </div>
+  );
+}
+
+function FolderIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4">
+      <path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" />
+    </svg>
+  );
+}
 
 function SidebarNavItem({
   to,
@@ -261,7 +267,7 @@ function SidebarNavItem({
       {({ isActive }) => (
         <div
           className={cn(
-            "flex items-center gap-3 rounded-2xl px-2 py-3 transition-all",
+            "flex items-center gap-3 rounded-2xl px-2 py-1.5 transition-all",
             isActive && "bg-white shadow-sm dark:bg-gray-700",
           )}
         >
@@ -296,20 +302,20 @@ function SidebarNavItem({
 
 function SidebarContent({
   isSuperAdmin,
-  isServiceAdmin,
+  isWorkspaceAdmin,
   user,
-  services,
+  workspaces,
   current,
   select,
   logout,
   onNavClick,
 }: {
   isSuperAdmin: boolean;
-  isServiceAdmin: boolean;
+  isWorkspaceAdmin: boolean;
   user: { email: string } | null;
-  services: AgentCard[];
-  current: AgentCard | null;
-  select: (s: AgentCard) => void;
+  workspaces: WorkspaceWithRole[];
+  current: WorkspaceWithRole | null;
+  select: (w: WorkspaceWithRole) => void;
   logout: () => void;
   onNavClick?: () => void;
 }) {
@@ -331,48 +337,42 @@ function SidebarContent({
         <span className="text-sm font-bold text-[#2D3748] dark:text-gray-100">RAGKIT ADMIN</span>
       </Link>
 
-      {/* Service switcher */}
-      {services.length > 0 && (
-        <ServiceSwitcher services={services} current={current} select={select} />
-      )}
+      {/* Workspace switcher */}
+      {workspaces.length > 0 && <WorkspaceSwitcher workspaces={workspaces} current={current} select={select} />}
 
       {/* Divider */}
       <div className="mx-6 h-px bg-gray-200 dark:bg-gray-700" />
 
-      {/* Nav */}
-      <nav className="flex-1 space-y-1 px-4 py-4">
+      {/* Nav — grouped by what you're doing: using agents, curating what they
+          know, building and measuring them, administering who gets in. */}
+      <nav className="flex-1 overflow-y-auto px-4 py-2">
+        <NavGroup label="USE" />
         <SidebarNavItem to="/" end icon={<GridIcon />} label="Agents" onClick={onNavClick} />
         <SidebarNavItem to="/chat" icon={<ChatIcon />} label="Chat" onClick={onNavClick} />
+
+        <NavGroup label="KNOWLEDGE" />
         <SidebarNavItem to="/documents" icon={<FileIcon />} label="Documents" onClick={onNavClick} />
-        <SidebarNavItem to="/search" icon={<SearchIcon />} label="Search" onClick={onNavClick} />
-        <SidebarNavItem to="/pipeline" icon={<FlowIcon />} label="Pipeline" onClick={onNavClick} />
-        {isServiceAdmin && (
-          <SidebarNavItem to="/playground" icon={<BeakerIcon />} label="Playground" onClick={onNavClick} />
+        <SidebarNavItem to="/document-sets" icon={<FolderIcon />} label="Document Sets" onClick={onNavClick} />
+
+        <NavGroup label="BUILD" />
+        {isWorkspaceAdmin && (
+          <SidebarNavItem to="/agent-settings" icon={<SlidersIcon />} label="Agent Settings" onClick={onNavClick} />
         )}
-        {isServiceAdmin && (
+        {isWorkspaceAdmin && (
+          <SidebarNavItem to="/mcp" icon={<PlugIcon />} label="MCP Servers" onClick={onNavClick} />
+        )}
+        <SidebarNavItem to="/lab" icon={<BeakerIcon />} label="Retrieval Lab" onClick={onNavClick} />
+        {isWorkspaceAdmin && (
           <SidebarNavItem to="/evals" icon={<ChartIcon />} label="Evaluate" onClick={onNavClick} />
         )}
 
-        {(isServiceAdmin || isSuperAdmin) && (
-          <>
-            <div className="px-2 pb-1 pt-5">
-              <span className="text-[10px] font-bold tracking-widest text-[#2D3748] dark:text-gray-400">
-                MANAGEMENT
-              </span>
-            </div>
-            {isServiceAdmin && (
-              <SidebarNavItem to="/agent-settings" icon={<SlidersIcon />} label="Agent Settings" onClick={onNavClick} />
-            )}
-            {isServiceAdmin && (
-              <SidebarNavItem to="/members" icon={<PeopleIcon />} label="Members" onClick={onNavClick} />
-            )}
-            {isSuperAdmin && (
-              <SidebarNavItem to="/users" icon={<PersonIcon />} label="Users" onClick={onNavClick} />
-            )}
-            {isSuperAdmin && (
-              <SidebarNavItem to="/services" icon={<GearIcon />} label="Manage Agents" onClick={onNavClick} />
-            )}
-          </>
+        {(isWorkspaceAdmin || isSuperAdmin) && <NavGroup label="ADMIN" />}
+        {isWorkspaceAdmin && (
+          <SidebarNavItem to="/members" icon={<PeopleIcon />} label="Members" onClick={onNavClick} />
+        )}
+        {isSuperAdmin && <SidebarNavItem to="/users" icon={<PersonIcon />} label="Users" onClick={onNavClick} />}
+        {isSuperAdmin && (
+          <SidebarNavItem to="/workspaces" icon={<GearIcon />} label="Workspaces" onClick={onNavClick} />
         )}
       </nav>
 
@@ -406,22 +406,21 @@ function SidebarContent({
 
 export default function Layout() {
   const { user, logout } = useAuth();
-  const { services, current, select } = useService();
+  const { workspaces, workspace: current, selectWorkspace: select, isWorkspaceAdmin } = useWorkspace();
   const { theme, toggle } = useTheme();
   const location = useLocation();
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   const isSuperAdmin = user?.is_superadmin ?? false;
-  const isServiceAdmin = current?.role === "admin";
 
   const segment = "/" + (location.pathname.split("/")[1] ?? "");
   const pageName = PAGE_NAMES[segment] ?? "Dashboard";
 
   const sidebarProps = {
     isSuperAdmin,
-    isServiceAdmin,
+    isWorkspaceAdmin,
     user,
-    services,
+    workspaces,
     current,
     select,
     logout,

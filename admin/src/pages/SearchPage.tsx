@@ -2,33 +2,41 @@ import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { PipelineApi, SearchApi } from "@/api/endpoints";
+import { DocumentSetsApi, PipelineApi, SearchApi } from "@/api/endpoints";
 import { Button, Card, FormField, Input } from "@/components/ui";
-import { useService } from "@/services/ServiceProvider";
+import { useWorkspace } from "@/workspace/WorkspaceProvider";
 import type { SearchResponse } from "@/api/types";
 
 export default function SearchPage() {
-  const { current: service } = useService();
+  const { workspace } = useWorkspace();
   const [query, setQuery] = useState("");
   const [topK, setTopK] = useState(5);
   const [docId, setDocId] = useState("");
   const [pipelineId, setPipelineId] = useState<number | null>(null);
+  const [setIds, setSetIds] = useState<number[]>([]);
   const [result, setResult] = useState<SearchResponse | null>(null);
 
   const { data: activePipelines = [] } = useQuery({
-    queryKey: ["pipelines-active", service?.id],
-    queryFn: () => PipelineApi.list(service!.id),
-    enabled: !!service,
+    queryKey: ["pipelines-active", workspace?.id],
+    queryFn: () => PipelineApi.list(workspace!.id),
+    enabled: !!workspace,
     staleTime: 30_000,
+  });
+
+  const { data: documentSets = [] } = useQuery({
+    queryKey: ["document-sets", workspace?.id],
+    queryFn: () => DocumentSetsApi.list(workspace!.id),
+    enabled: !!workspace,
   });
 
   const run = useMutation({
     mutationFn: () =>
-      SearchApi.run(service!.id, {
+      SearchApi.run(workspace!.id, {
         query,
         top_k: topK,
         document_id: docId.trim() ? Number(docId) : undefined,
         pipeline_id: pipelineId,
+        document_set_ids: setIds.length ? setIds : null,
       }),
     onSuccess: (r) => setResult(r),
     onError: (e) => toast.error(e instanceof Error ? e.message : "Search failed"),
@@ -36,8 +44,8 @@ export default function SearchPage() {
 
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
-    if (!service) {
-      toast.error("No agent selected");
+    if (!workspace) {
+      toast.error("No workspace selected");
       return;
     }
     setResult(null);
@@ -75,6 +83,33 @@ export default function SearchPage() {
               placeholder="e.g. 1"
             />
           </FormField>
+          {documentSets.length > 0 && (
+            // Same scope an agent with these sets selected would search.
+            <div className="md:col-span-4">
+              <p className="mb-1 text-xs font-semibold text-[#2D3748] dark:text-gray-200">
+                Document sets <span className="font-normal text-gray-400">— none selected searches the whole workspace; an agent with these sets searches the same documents</span>
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {documentSets.map((ds) => {
+                  const on = setIds.includes(ds.id);
+                  return (
+                    <button
+                      key={ds.id}
+                      type="button"
+                      onClick={() => setSetIds(on ? setIds.filter((i) => i !== ds.id) : [...setIds, ds.id])}
+                      className={
+                        on
+                          ? "rounded-lg border border-teal-400 bg-teal-50 px-2.5 py-1 text-xs font-semibold text-teal-700 dark:bg-teal-900/30 dark:text-teal-300"
+                          : "rounded-lg border border-gray-200 px-2.5 py-1 text-xs text-gray-500 hover:border-gray-300 dark:border-gray-600"
+                      }
+                    >
+                      {ds.name} <span className="font-mono text-gray-400">{ds.document_ids.length}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           {activePipelines.length > 0 && (
             <FormField label="Pipeline (optional)" htmlFor="pipeline" className="md:col-span-2">
               <select
@@ -91,7 +126,7 @@ export default function SearchPage() {
             </FormField>
           )}
           <div className="md:col-span-4">
-            <Button type="submit" disabled={run.isPending || !service}>
+            <Button type="submit" disabled={run.isPending || !workspace}>
               {run.isPending ? "Searching…" : "Search"}
             </Button>
           </div>

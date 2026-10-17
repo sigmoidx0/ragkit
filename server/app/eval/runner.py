@@ -26,7 +26,7 @@ from app.agent.config import load_system_prompt
 from app.agent.delegation import DELEGATE_TOOL_PREFIX
 from app.agent.graph import build_multi_agent_graph
 from app.core.config import get_settings
-from app.db.models import EvalRun
+from app.db.models import Agent, EvalRun
 from app.db.session import SessionLocal
 from app.llm import get_chat_model
 from app.schemas.agent_config import AgentConfig
@@ -91,13 +91,13 @@ def _ranked_documents(sources: list[SourceItem]) -> list[int]:
 
 
 async def run_case(
-    db: Session, service_id: int, agent_cfg: AgentConfig, system_prompt: str, case: EvalCase, user_id: int | None
+    db: Session, agent: Agent, agent_cfg: AgentConfig, system_prompt: str, case: EvalCase, user_id: int | None
 ) -> EvalCaseResult:
     result = EvalCaseResult(question=case.question, expected_document_id=case.expected_document_id)
     t0 = time.perf_counter()
     try:
         built = build_multi_agent_graph(
-            db, service_id, agent_cfg, system_prompt, agent_cfg.default_retrieval_mode, user_id=user_id
+            db, agent, agent_cfg, system_prompt, agent_cfg.default_retrieval_mode, user_id=user_id
         )
         async for ev in built.graph.astream_events(
             {"messages": [HumanMessage(content=case.question)], "agent_type": ""}, version="v2"
@@ -177,11 +177,14 @@ async def execute_eval_run(run_id: int, user_id: int | None) -> None:
 
         agent_cfg = AgentConfig.model_validate(run.config_snapshot)
         # Runs created before prompts were snapshotted fall back to the active one.
-        system_prompt = run.system_prompt or load_system_prompt(db, run.service_id)
+        agent = db.get(Agent, run.agent_id)
+        if agent is None:
+            raise RuntimeError(f"agent {run.agent_id} no longer exists")
+        system_prompt = run.system_prompt or load_system_prompt(db, agent.id)
         cases = [EvalCase.model_validate(c) for c in run.cases]
         results: list[EvalCaseResult] = []
         for case in cases:
-            results.append(await run_case(db, run.service_id, agent_cfg, system_prompt, case, user_id))
+            results.append(await run_case(db, agent, agent_cfg, system_prompt, case, user_id))
             # Reassign (not append) so SQLAlchemy sees the JSON column change.
             run.results = [r.model_dump(mode="json") for r in results]
             run.summary = summarize(cases, results).model_dump(mode="json")

@@ -1,13 +1,17 @@
 import { apiFetch, apiFetchBlob, apiSSE } from "./client";
 import type {
   AgentCard,
+  McpServer,
+  McpServerInput,
+  McpToolCall,
   Feedback,
   FeedbackOverview,
+  RouteResult,
+  UnansweredOverview,
   Rating,
   EvalCase,
   EvalRun,
   AgentConfig,
-  GraphTopology,
   ProviderInfo,
   ChatMessage,
   ChatSession,
@@ -24,9 +28,12 @@ import type {
   PipelineSchema,
   PipelineStatus,
   SearchResponse,
-  Service,
-  ServiceMember,
-  ServiceWithRole,
+  Workspace,
+  WorkspaceMember,
+  WorkspaceWithRole,
+  AgentSummary,
+  DocumentSet,
+  GraphPreview,
   SessionMessage,
   SystemPrompt,
   TokenResponse,
@@ -39,49 +46,49 @@ export const AuthApi = {
   me: () => apiFetch<User>("/auth/me"),
 };
 
-export const ServicesApi = {
-  listMine: () => apiFetch<ServiceWithRole[]>("/me/services"),
-  listAll: () => apiFetch<Service[]>("/services"),
+export const WorkspacesApi = {
+  listMine: () => apiFetch<WorkspaceWithRole[]>("/me/workspaces"),
+  listAll: () => apiFetch<Workspace[]>("/workspaces"),
   create: (name: string, slug: string) =>
-    apiFetch<Service>("/services", { body: { name, slug } }),
-  remove: (serviceId: number) =>
-    apiFetch<void>(`/services/${serviceId}`, { method: "DELETE" }),
-  listMembers: (serviceId: number) =>
-    apiFetch<ServiceMember[]>(`/services/${serviceId}/members`),
-  addMember: (serviceId: number, userId: number, role: string) =>
-    apiFetch<ServiceMember>(`/services/${serviceId}/members`, {
+    apiFetch<Workspace>("/workspaces", { body: { name, slug } }),
+  remove: (workspaceId: number) =>
+    apiFetch<void>(`/workspaces/${workspaceId}`, { method: "DELETE" }),
+  listMembers: (workspaceId: number) =>
+    apiFetch<WorkspaceMember[]>(`/workspaces/${workspaceId}/members`),
+  addMember: (workspaceId: number, userId: number, role: string) =>
+    apiFetch<WorkspaceMember>(`/workspaces/${workspaceId}/members`, {
       body: { user_id: userId, role },
     }),
-  updateMember: (serviceId: number, userId: number, role: string) =>
-    apiFetch<ServiceMember>(`/services/${serviceId}/members/${userId}`, {
+  updateMember: (workspaceId: number, userId: number, role: string) =>
+    apiFetch<WorkspaceMember>(`/workspaces/${workspaceId}/members/${userId}`, {
       method: "PATCH",
       body: { role },
     }),
-  removeMember: (serviceId: number, userId: number) =>
-    apiFetch<void>(`/services/${serviceId}/members/${userId}`, { method: "DELETE" }),
+  removeMember: (workspaceId: number, userId: number) =>
+    apiFetch<void>(`/workspaces/${workspaceId}/members/${userId}`, { method: "DELETE" }),
 };
 
 export const DocumentsApi = {
-  list: (serviceId: number, params: { limit?: number; offset?: number; q?: string } = {}) => {
+  list: (workspaceId: number, params: { limit?: number; offset?: number; q?: string } = {}) => {
     const qs = new URLSearchParams();
     if (params.limit != null) qs.set("limit", String(params.limit));
     if (params.offset != null) qs.set("offset", String(params.offset));
     if (params.q) qs.set("q", params.q);
     const suffix = qs.toString() ? `?${qs}` : "";
-    return apiFetch<DocumentListResponse>(`/services/${serviceId}/documents${suffix}`);
+    return apiFetch<DocumentListResponse>(`/workspaces/${workspaceId}/documents${suffix}`);
   },
-  get: (serviceId: number, id: number) =>
-    apiFetch<DocumentSummary>(`/services/${serviceId}/documents/${id}`),
-  create: (serviceId: number, fd: FormData) =>
-    apiFetch<DocumentSummary>(`/services/${serviceId}/documents`, { formData: fd }),
-  update: (serviceId: number, id: number, body: { title?: string; description?: string }) =>
-    apiFetch<DocumentSummary>(`/services/${serviceId}/documents/${id}`, { method: "PATCH", body }),
-  remove: (serviceId: number, id: number) =>
-    apiFetch<void>(`/services/${serviceId}/documents/${id}`, { method: "DELETE" }),
-  fetchFile: (serviceId: number, id: number) =>
-    apiFetchBlob(`/services/${serviceId}/documents/${id}/file`),
-  previewText: (serviceId: number, id: number) =>
-    apiFetch<{ text: string }>(`/services/${serviceId}/documents/${id}/preview-text`),
+  get: (workspaceId: number, id: number) =>
+    apiFetch<DocumentSummary>(`/workspaces/${workspaceId}/documents/${id}`),
+  create: (workspaceId: number, fd: FormData) =>
+    apiFetch<DocumentSummary>(`/workspaces/${workspaceId}/documents`, { formData: fd }),
+  update: (workspaceId: number, id: number, body: { title?: string; description?: string }) =>
+    apiFetch<DocumentSummary>(`/workspaces/${workspaceId}/documents/${id}`, { method: "PATCH", body }),
+  remove: (workspaceId: number, id: number) =>
+    apiFetch<void>(`/workspaces/${workspaceId}/documents/${id}`, { method: "DELETE" }),
+  fetchFile: (workspaceId: number, id: number) =>
+    apiFetchBlob(`/workspaces/${workspaceId}/documents/${id}/file`),
+  previewText: (workspaceId: number, id: number) =>
+    apiFetch<{ text: string }>(`/workspaces/${workspaceId}/documents/${id}/preview-text`),
 };
 
 export const IngestApi = {
@@ -96,96 +103,180 @@ export const UsersApi = {
 };
 
 export const SearchApi = {
-  run: (serviceId: number, payload: { query: string; top_k?: number; document_id?: number | null; pipeline_id?: number | null }) =>
-    apiFetch<SearchResponse>(`/services/${serviceId}/search`, { body: payload }),
+  run: (
+    workspaceId: number,
+    payload: {
+      query: string;
+      top_k?: number;
+      document_id?: number | null;
+      pipeline_id?: number | null;
+      /** Limit to documents in these sets — an agent's retrieval scope. */
+      document_set_ids?: number[] | null;
+    },
+  ) =>
+    apiFetch<SearchResponse>(`/workspaces/${workspaceId}/search`, { body: payload }),
 };
 
 export const AgentsApi = {
-  listMine: () => apiFetch<AgentCard[]>("/me/agents"),
-  getConfig: (serviceId: number) => apiFetch<AgentConfig>(`/services/${serviceId}/agent-config`),
-  updateConfig: (serviceId: number, config: AgentConfig) =>
-    apiFetch<AgentConfig>(`/services/${serviceId}/agent-config`, { method: "PUT", body: config }),
-  previewGraph: (serviceId: number, config: AgentConfig, retrievalMode?: RetrievalMode) =>
-    apiFetch<GraphTopology>(`/services/${serviceId}/agent-graph/preview`, {
+  /** Agent cards the user can reach; pass a workspace to list just its agents. */
+  listMine: (workspaceId?: number) =>
+    apiFetch<AgentCard[]>(`/me/agents${workspaceId != null ? `?workspace_id=${workspaceId}` : ""}`),
+  create: (workspaceId: number, name: string, copyFromAgentId?: number | null) =>
+    apiFetch<AgentSummary>(`/workspaces/${workspaceId}/agents`, {
+      body: { name, copy_from_agent_id: copyFromAgentId ?? null },
+    }),
+  rename: (agentId: number, name: string) =>
+    apiFetch<AgentSummary>(`/agents/${agentId}`, { method: "PATCH", body: { name } }),
+  remove: (agentId: number) => apiFetch<void>(`/agents/${agentId}`, { method: "DELETE" }),
+  getConfig: (agentId: number) => apiFetch<AgentConfig>(`/agents/${agentId}/config`),
+  updateConfig: (agentId: number, config: AgentConfig) =>
+    apiFetch<AgentConfig>(`/agents/${agentId}/config`, { method: "PUT", body: config }),
+  previewGraph: (agentId: number, config: AgentConfig, retrievalMode?: RetrievalMode) =>
+    apiFetch<GraphPreview>(`/agents/${agentId}/graph-preview`, {
       body: { config, retrieval_mode: retrievalMode ?? null },
     }),
   providers: () => apiFetch<ProviderInfo[]>("/llm/providers"),
+  /** Which of the workspace's agents should take this question. */
+  route: (workspaceId: number, question: string) =>
+    apiFetch<RouteResult>(`/workspaces/${workspaceId}/route`, { body: { question } }),
 };
 
 export const EvalsApi = {
-  list: (serviceId: number) => apiFetch<EvalRun[]>(`/services/${serviceId}/evals`),
+  list: (agentId: number) => apiFetch<EvalRun[]>(`/agents/${agentId}/evals`),
   create: (
-    serviceId: number,
+    agentId: number,
     body: { name: string; cases: EvalCase[]; config?: AgentConfig | null; system_prompt_id?: number | null },
   ) =>
-    apiFetch<EvalRun>(`/services/${serviceId}/evals`, { body }),
-  remove: (serviceId: number, runId: number) =>
-    apiFetch<void>(`/services/${serviceId}/evals/${runId}`, { method: "DELETE" }),
+    apiFetch<EvalRun>(`/agents/${agentId}/evals`, { body }),
+  remove: (agentId: number, runId: number) =>
+    apiFetch<void>(`/agents/${agentId}/evals/${runId}`, { method: "DELETE" }),
 };
 
 export const FeedbackApi = {
-  list: (serviceId: number, rating?: Rating) =>
-    apiFetch<FeedbackOverview>(`/services/${serviceId}/feedback${rating ? `?rating=${rating}` : ""}`),
+  list: (agentId: number, rating?: Rating) =>
+    apiFetch<FeedbackOverview>(`/agents/${agentId}/feedback${rating ? `?rating=${rating}` : ""}`),
+  unanswered: (agentId: number) => apiFetch<UnansweredOverview>(`/agents/${agentId}/unanswered`),
+};
+
+export const DocumentSetsApi = {
+  list: (workspaceId: number) => apiFetch<DocumentSet[]>(`/workspaces/${workspaceId}/document-sets`),
+  create: (workspaceId: number, body: { name: string; description?: string | null; document_ids?: number[] }) =>
+    apiFetch<DocumentSet>(`/workspaces/${workspaceId}/document-sets`, { body }),
+  update: (
+    workspaceId: number,
+    setId: number,
+    body: { name?: string; description?: string | null; document_ids?: number[] },
+  ) => apiFetch<DocumentSet>(`/workspaces/${workspaceId}/document-sets/${setId}`, { method: "PATCH", body }),
+  remove: (workspaceId: number, setId: number) =>
+    apiFetch<void>(`/workspaces/${workspaceId}/document-sets/${setId}`, { method: "DELETE" }),
 };
 
 export const PipelineApi = {
   schema: () => apiFetch<PipelineSchema>("/pipeline-schema"),
   nodeModels: () => apiFetch<NodeModels>("/pipeline-node-models"),
   defaultGraph: () => apiFetch<PipelineGraph>("/pipeline-default"),
-  list: (serviceId: number) =>
-    apiFetch<Pipeline[]>(`/services/${serviceId}/pipelines`),
-  get: (serviceId: number, pipelineId: number) =>
-    apiFetch<Pipeline>(`/services/${serviceId}/pipelines/${pipelineId}`),
-  create: (serviceId: number, body: { name: string; graph_json: PipelineGraph }) =>
-    apiFetch<Pipeline>(`/services/${serviceId}/pipelines`, { body }),
-  update: (serviceId: number, pipelineId: number, body: { name?: string; graph_json?: PipelineGraph }) =>
-    apiFetch<Pipeline>(`/services/${serviceId}/pipelines/${pipelineId}`, { method: "PUT", body }),
-  remove: (serviceId: number, pipelineId: number) =>
-    apiFetch<void>(`/services/${serviceId}/pipelines/${pipelineId}`, { method: "DELETE" }),
-  setStatus: (serviceId: number, pipelineId: number, status: PipelineStatus) =>
-    apiFetch<Pipeline>(`/services/${serviceId}/pipelines/${pipelineId}/status`, { method: "PATCH", body: { status } }),
-  readiness: (serviceId: number, pipelineId: number) =>
-    apiFetch<PipelineReadiness>(`/services/${serviceId}/pipelines/${pipelineId}/readiness`),
-  prepare: (serviceId: number, pipelineId: number) =>
-    apiFetch<{ ready: true }>(`/services/${serviceId}/pipelines/${pipelineId}/prepare`, { body: {} }),
-  run: (serviceId: number, pipelineId: number, body: PipelineRunRequest) =>
-    apiFetch<PipelineRunResponse>(`/services/${serviceId}/pipelines/${pipelineId}/run`, { body }),
+  list: (workspaceId: number) =>
+    apiFetch<Pipeline[]>(`/workspaces/${workspaceId}/pipelines`),
+  get: (workspaceId: number, pipelineId: number) =>
+    apiFetch<Pipeline>(`/workspaces/${workspaceId}/pipelines/${pipelineId}`),
+  create: (workspaceId: number, body: { name: string; graph_json: PipelineGraph }) =>
+    apiFetch<Pipeline>(`/workspaces/${workspaceId}/pipelines`, { body }),
+  update: (workspaceId: number, pipelineId: number, body: { name?: string; graph_json?: PipelineGraph }) =>
+    apiFetch<Pipeline>(`/workspaces/${workspaceId}/pipelines/${pipelineId}`, { method: "PUT", body }),
+  remove: (workspaceId: number, pipelineId: number) =>
+    apiFetch<void>(`/workspaces/${workspaceId}/pipelines/${pipelineId}`, { method: "DELETE" }),
+  setStatus: (workspaceId: number, pipelineId: number, status: PipelineStatus) =>
+    apiFetch<Pipeline>(`/workspaces/${workspaceId}/pipelines/${pipelineId}/status`, { method: "PATCH", body: { status } }),
+  readiness: (workspaceId: number, pipelineId: number) =>
+    apiFetch<PipelineReadiness>(`/workspaces/${workspaceId}/pipelines/${pipelineId}/readiness`),
+  prepare: (workspaceId: number, pipelineId: number) =>
+    apiFetch<{ ready: true }>(`/workspaces/${workspaceId}/pipelines/${pipelineId}/prepare`, { body: {} }),
+  run: (workspaceId: number, pipelineId: number, body: PipelineRunRequest) =>
+    apiFetch<PipelineRunResponse>(`/workspaces/${workspaceId}/pipelines/${pipelineId}/run`, { body }),
 };
 
 export const SystemPromptsApi = {
-  list: (serviceId: number) =>
-    apiFetch<SystemPrompt[]>(`/services/${serviceId}/system-prompts`),
-  create: (serviceId: number, body: { name: string; content: string }) =>
-    apiFetch<SystemPrompt>(`/services/${serviceId}/system-prompts`, { body }),
-  update: (serviceId: number, id: number, body: { name?: string; content?: string }) =>
-    apiFetch<SystemPrompt>(`/services/${serviceId}/system-prompts/${id}`, { method: "PATCH", body }),
-  activate: (serviceId: number, id: number) =>
-    apiFetch<SystemPrompt>(`/services/${serviceId}/system-prompts/${id}/activate`, { body: {} }),
-  remove: (serviceId: number, id: number) =>
-    apiFetch<void>(`/services/${serviceId}/system-prompts/${id}`, { method: "DELETE" }),
+  list: (agentId: number) =>
+    apiFetch<SystemPrompt[]>(`/agents/${agentId}/system-prompts`),
+  create: (agentId: number, body: { name: string; content: string }) =>
+    apiFetch<SystemPrompt>(`/agents/${agentId}/system-prompts`, { body }),
+  update: (agentId: number, id: number, body: { name?: string; content?: string }) =>
+    apiFetch<SystemPrompt>(`/agents/${agentId}/system-prompts/${id}`, { method: "PATCH", body }),
+  activate: (agentId: number, id: number) =>
+    apiFetch<SystemPrompt>(`/agents/${agentId}/system-prompts/${id}/activate`, { body: {} }),
+  remove: (agentId: number, id: number) =>
+    apiFetch<void>(`/agents/${agentId}/system-prompts/${id}`, { method: "DELETE" }),
 };
 
 export const ChatApi = {
-  stream: (serviceId: number, messages: ChatMessage[], topK?: number, signal?: AbortSignal) =>
-    apiSSE(`/services/${serviceId}/chat`, { messages, top_k: topK }, signal),
+  stream: (agentId: number, messages: ChatMessage[], topK?: number, signal?: AbortSignal) =>
+    apiSSE(`/agents/${agentId}/chat`, { messages, top_k: topK }, signal),
 };
 
 export const SessionsApi = {
-  list: (serviceId: number) =>
-    apiFetch<ChatSession[]>(`/services/${serviceId}/sessions`),
-  create: (serviceId: number, title?: string | null) =>
-    apiFetch<ChatSession>(`/services/${serviceId}/sessions`, { body: { title: title ?? null } }),
-  messages: (serviceId: number, sessionId: number) =>
-    apiFetch<SessionMessage[]>(`/services/${serviceId}/sessions/${sessionId}/messages`),
-  rate: (serviceId: number, sessionId: number, turnIndex: number, rating: Rating, comment?: string | null) =>
-    apiFetch<Feedback>(`/services/${serviceId}/sessions/${sessionId}/turns/${turnIndex}/feedback`, {
+  list: (agentId: number) =>
+    apiFetch<ChatSession[]>(`/agents/${agentId}/sessions`),
+  create: (agentId: number, title?: string | null) =>
+    apiFetch<ChatSession>(`/agents/${agentId}/sessions`, { body: { title: title ?? null } }),
+  messages: (agentId: number, sessionId: number) =>
+    apiFetch<SessionMessage[]>(`/agents/${agentId}/sessions/${sessionId}/messages`),
+  rate: (agentId: number, sessionId: number, turnIndex: number, rating: Rating, comment?: string | null) =>
+    apiFetch<Feedback>(`/agents/${agentId}/sessions/${sessionId}/turns/${turnIndex}/feedback`, {
       method: "PUT",
       body: { rating, comment: comment ?? null },
     }),
-  clearRating: (serviceId: number, sessionId: number, turnIndex: number) =>
-    apiFetch<void>(`/services/${serviceId}/sessions/${sessionId}/turns/${turnIndex}/feedback`, { method: "DELETE" }),
-  remove: (serviceId: number, sessionId: number) =>
-    apiFetch<void>(`/services/${serviceId}/sessions/${sessionId}`, { method: "DELETE" }),
-  chat: (serviceId: number, sessionId: number, message: string, topK?: number, signal?: AbortSignal, retrievalMode?: RetrievalMode) =>
-    apiSSE(`/services/${serviceId}/sessions/${sessionId}/chat`, { message, top_k: topK, retrieval_mode: retrievalMode ?? null }, signal),
+  clearRating: (agentId: number, sessionId: number, turnIndex: number) =>
+    apiFetch<void>(`/agents/${agentId}/sessions/${sessionId}/turns/${turnIndex}/feedback`, { method: "DELETE" }),
+  remove: (agentId: number, sessionId: number) =>
+    apiFetch<void>(`/agents/${agentId}/sessions/${sessionId}`, { method: "DELETE" }),
+  pendingApprovals: (agentId: number, sessionId: number) =>
+    apiFetch<{ id: number; server_name: string; tool: string; args: Record<string, unknown> }[]>(
+      `/agents/${agentId}/sessions/${sessionId}/approvals`,
+    ),
+  /** Approve or reject pending MCP calls; streams the rest of the paused turn. */
+  decide: (
+    agentId: number,
+    sessionId: number,
+    decisions: { call_id: number; approve: boolean; args?: Record<string, unknown> | null }[],
+    signal?: AbortSignal,
+  ) => apiSSE(`/agents/${agentId}/sessions/${sessionId}/approvals`, { decisions }, signal),
+  /**
+   * `replaceTurn` (0-based, counting user messages) reruns from that message: edit or
+   * regenerate. `regenerate` answers at a modestly higher temperature so the answer can differ.
+   */
+  chat: (
+    agentId: number,
+    sessionId: number,
+    message: string,
+    topK?: number,
+    signal?: AbortSignal,
+    retrievalMode?: RetrievalMode,
+    replaceTurn?: number,
+    regenerate?: boolean,
+  ) =>
+    apiSSE(
+      `/agents/${agentId}/sessions/${sessionId}/chat`,
+      {
+        message,
+        top_k: topK,
+        retrieval_mode: retrievalMode ?? null,
+        replace_turn: replaceTurn ?? null,
+        regenerate: regenerate ?? false,
+      },
+      signal,
+    ),
+};
+
+export const McpApi = {
+  list: (workspaceId: number) => apiFetch<McpServer[]>(`/workspaces/${workspaceId}/mcp-servers`),
+  create: (workspaceId: number, body: McpServerInput) =>
+    apiFetch<McpServer>(`/workspaces/${workspaceId}/mcp-servers`, { body }),
+  update: (workspaceId: number, serverId: number, body: McpServerInput) =>
+    apiFetch<McpServer>(`/workspaces/${workspaceId}/mcp-servers/${serverId}`, { method: "PATCH", body }),
+  refresh: (workspaceId: number, serverId: number) =>
+    apiFetch<McpServer>(`/workspaces/${workspaceId}/mcp-servers/${serverId}/refresh`, { method: "POST" }),
+  remove: (workspaceId: number, serverId: number) =>
+    apiFetch<void>(`/workspaces/${workspaceId}/mcp-servers/${serverId}`, { method: "DELETE" }),
+  calls: (workspaceId: number, limit = 50) =>
+    apiFetch<McpToolCall[]>(`/workspaces/${workspaceId}/mcp-calls?limit=${limit}`),
 };

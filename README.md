@@ -1,6 +1,6 @@
 # ragkit
 
-문서 기반 **멀티 에이전트 RAG 플랫폼**입니다. 에이전트를 만들어 각자의 문서·모델·라우터를 설정하고, 답변이 만들어지는 과정을 실시간 그래프와 trace로 확인하고, 사용자 피드백을 평가 세트로 바꿔 설정 변경의 효과를 수치로 검증합니다.
+문서 기반 **멀티 에이전트 RAG 플랫폼**입니다. 워크스페이스 안에 에이전트를 여러 개 만들어 각자 검색할 문서 세트·모델·라우터를 설정하고, 답변이 만들어지는 과정을 실시간 그래프와 trace로 확인하고, 사용자 피드백을 평가 세트로 바꿔 설정 변경의 효과를 수치로 검증합니다.
 
 ![Run inspector — 위임된 제조 agent의 내부 진행과 실행 타임라인](docs/images/run-inspector.png)
 
@@ -13,9 +13,12 @@
 | **Agents** — 첫 화면에서 대화할 에이전트를 고릅니다. 카드에는 실제로 돌아가는 모델, 문서 수, 시작 질문이 보입니다. | ![](docs/images/agents.png) |
 | **Agent Settings** — 에이전트별로 LLM provider·모델, 검색 파이프라인, 라우터(어떤 전문 에이전트로 보낼지), 위임 대상을 UI로 설정합니다. 오른쪽 미리보기는 저장 전 설정으로 실제 그래프를 그립니다. | ![](docs/images/agent-settings.png) |
 | **Chat** — 답변의 `[1]`에 마우스를 올리면 근거 구절이, 클릭하면 문서가 열립니다. 옆 패널에서 그래프가 실행 위치를 따라 켜지고, 답변마다 👍/👎를 남깁니다. | ![](docs/images/chat-citations.png) |
+| **MCP 도구 + 승인** — 워크스페이스에 원격 MCP 서버를 등록하고, 에이전트마다 쓸 도구와 "바로 실행 / 승인 후 실행"을 고릅니다. 데이터를 바꾸는 호출은 채팅에서 멈춰 승인 카드(인자 수정 가능)를 띄우고, 승인·거절이 감사 기록에 남습니다. | 데모: 설비 정비 MCP 서버 (`server/demo`) |
 | **Evaluate** — 질문 세트를 설정 A/B로 돌려 검색 적중률, 답변 핵심어 포함률, 근거성(LLM 채점), 지연, 토큰을 비교합니다. 👎 받은 질문을 그대로 평가 세트로 가져옵니다. | ![](docs/images/evaluate.png) |
 
 ## 아키텍처
+
+**Workspace → Agent → Document Set.** 워크스페이스는 멤버·권한과 문서를 소유하는 단위이고, 그 안에 에이전트를 여러 개 둡니다. 문서 세트는 워크스페이스 문서를 이름 붙여 묶은 것(문서 ↔ 세트 M:N)이며, 에이전트는 고른 세트의 문서만 검색하며, 세트를 하나도 고르지 않으면 아무 문서도 검색하지 않습니다. 에이전트가 아는 범위는 명시적으로 준 것뿐이고, 기본값으로 워크스페이스 전체가 열리지 않습니다. 에이전트가 쓰는 세트는 삭제를 막습니다. 대화 기록·프롬프트·평가·피드백은 에이전트에 속합니다.
 
 ```mermaid
 flowchart LR
@@ -27,15 +30,17 @@ flowchart LR
         SUP["supervisor<br/>라우트 분류"] --> R["retrieval"] & S["summary"] & C["comparison"] & D["direct"]
         R & S -. tool .-> T1["retrieval tool<br/>내장 체인 또는 Pipeline Builder 파이프라인"]
         R & S -. tool .-> T2["다른 에이전트<br/>(agent-as-tool, 1단계)"]
+        R & S & D -. tool .-> T3["MCP 도구<br/>(승인 필요 시 interrupt)"]
     end
 
     API --> Agent
     API --> DB[("Postgres / SQLite<br/>설정 · 대화 기록 · 평가 · 피드백")]
     T1 --> Q[("Qdrant")]
+    T3 --> EXT["원격 MCP 서버<br/>(streamable HTTP)"]
     Agent --> LLM["LLM<br/>Ollama · Gemini · OpenAI · Anthropic · vLLM"]
 ```
 
-채팅은 SSE로 스트리밍되며, 토큰 외에 그래프 모양(`graph`), 노드 진입·이탈(`node_state`), 위임 에이전트 내부 진행(`delegate_state`), 실행 구간(`span`)을 함께 보냅니다. UI의 그래프와 trace는 이 이벤트만으로 그려집니다.
+채팅은 SSE로 스트리밍되며, 토큰 외에 그래프 모양(`graph`), 노드 진입·이탈(`node_state`), 위임 에이전트 내부 진행(`delegate_state`), 실행 구간(`span`), MCP 호출(`mcp_call`), 승인 대기(`approval_required`)를 함께 보냅니다. UI의 그래프와 trace는 이 이벤트만으로 그려집니다.
 
 | 경로 | 내용 |
 |---|---|
@@ -59,6 +64,10 @@ flowchart LR
 
 **같은 코드가 SQLite와 Postgres 양쪽에서 돕니다.** 로컬 개발은 설치 없이 SQLite로, 배포 스택은 Postgres로 돕니다. 대화 기록 저장소도 DB URL에 따라 고르고, CI가 매 커밋마다 Postgres에서 마이그레이션을 upgrade → downgrade → upgrade로 검증합니다.
 
+**사람의 승인은 LangGraph `interrupt()`로 실행을 멈췄다가 이어 붙입니다.** "승인 필요" MCP 도구는 호출 직전에 실행을 멈추고, 그 지점이 체크포인트에 남습니다. 사용자가 승인·거절(또는 인자 수정 후 승인)하면 `Command(resume=…)`로 같은 지점부터 이어 실행하므로, 그 사이 서버가 재시작돼도 승인 대기는 유지됩니다. 멈출 수 없는 실행(세션 없는 API, 평가, 위임받은 에이전트)에는 승인이 필요한 도구를 아예 주지 않습니다. 이것이 대화 기록 테이블이 아니라 체크포인터를 쓰는 실제 이유입니다.
+
+**MCP 서버의 토큰은 환경변수 이름만 저장하고, 이름은 `MCP_TOKEN_`으로 시작해야 합니다.** 워크스페이스 관리자가 임의의 변수(예: `JWT_SECRET_KEY`)를 지정해 자기가 정한 URL로 보내는 것을 막기 위해서입니다. 로컬 프로세스를 띄우는 stdio 서버는 허용하지 않고 원격(streamable HTTP) 서버만 받습니다.
+
 ## 측정으로 확인한 것
 
 모든 수치는 이 저장소의 평가 기능과 로컬 스택(qwen2.5:14b, Ollama)으로 측정했습니다.
@@ -75,7 +84,9 @@ flowchart LR
 
 - **청크 분절.** 한 절의 목적·절차·요구사항이 서로 다른 청크로 나뉘어, "어떻게 하나요?"에 목적 청크만 검색되는 경우가 있습니다. 검색된 청크의 앞뒤 청크를 함께 넘기는 것이 다음 개선 후보입니다.
 - **소형 로컬 모델의 tool 사용 신뢰도.** 위 측정은 qwen2.5:14b 기준입니다. Agent Settings에서 에이전트별로 더 강한 모델을 지정할 수 있습니다.
-- **명칭.** 화면은 "Agent"로 통일했지만, 코드와 API 경로는 아직 `service`입니다.
+- **레거시 경로.** `ragkit-mcp` 호환을 위해 `/services/{workspace_id}/search·documents` 별칭을 남겨 두었고, Qdrant payload 키도 `service_id`(값은 워크스페이스 id)를 유지합니다.
+- **승인 후 재개의 부수 효과.** LangGraph는 멈춘 노드를 처음부터 다시 실행하므로, 재개할 때 그 턴의 선행 검색이 한 번 더 돌고, 승인 도구와 같은 호출 묶음에 있던 자동 실행 도구도 다시 실행됩니다. 데이터를 바꾸는 도구를 "승인 필요"로 두는 이유이기도 합니다.
+- **MCP 서버 URL 검증.** 워크스페이스 관리자는 내부망 주소도 등록할 수 있습니다. 운영 환경이라면 허용 도메인 목록이 필요합니다. 인증은 bearer 토큰만 지원합니다.
 - **AWS.** 배포 절차는 [deploy/README.md](deploy/README.md)에 문서화했고 같은 compose로 로컬 검증했지만, 실제 AWS 계정에서는 실행해 보지 않았습니다.
 
 ## 실행
@@ -101,6 +112,12 @@ cd admin && npm install && npm run dev   # http://localhost:5173
 
 첫 기동 시 `server/config.yaml`의 `admin_bootstrap.email`(기본 `admin@example.com`)과 `INITIAL_ADMIN_PASSWORD`로 superadmin과 Default 에이전트를 만듭니다. 마이그레이션은 서버 시작 시 자동 적용됩니다.
 
+**데모 MCP 서버** — 설비·경보·정비 기사·작업지시를 다루는 mock 서버와, 작업지시가 바뀌는 모습을 보여주는 보드(http://localhost:8765/)입니다. MCP Servers 화면에서 `http://localhost:8765/mcp`, 토큰 변수 `MCP_TOKEN_MAINTENANCE`로 등록합니다.
+
+```bash
+cd server && MCP_TOKEN_MAINTENANCE=demo-maintenance-token uv run python -m demo.maintenance_mcp
+```
+
 **테스트** — `cd server && uv run ruff check app tests && uv run pytest` · `cd admin && npx tsc --noEmit`
 
 ## 설정
@@ -117,18 +134,18 @@ cd admin && npm install && npm run dev   # http://localhost:5173
 | `LLM_API_KEY` | 기본 provider의 키 (단일 provider 배포용) |
 | `OLLAMA_BASE_URL` · `VECTORSTORE_URL` | 컨테이너 환경에서 서비스 주소 |
 | `VECTORSTORE_API_KEY` · `EMBEDDING_API_KEY` · `RERANKER_API_KEY` | 각 구성요소 인증이 필요할 때 |
-| `MCP_SERVICE_TOKEN` | MCP 어댑터가 REST 서버를 호출할 때 쓰는 공유 토큰 |
 | `AWS_*` · `S3_BUCKET` · `S3_ENDPOINT_URL` | `storage.kind: s3`일 때 |
+| `MCP_TOKEN_*` | MCP 서버의 bearer 토큰. MCP Servers 화면에는 변수 이름만 등록합니다 |
 
-## MCP 도구
+## ragkit을 MCP로 노출 (반대 방향)
 
-FastMCP 어댑터는 별도 레포(`ragkit-mcp`)에 있으며 이 서버의 REST API를 호출합니다.
+에이전트가 MCP 서버를 쓰는 것과 별개로, ragkit 자체를 MCP 도구로 노출하는 FastMCP 어댑터가 있습니다. 어댑터는 별도 레포(`ragkit-mcp`)에 있으며 이 서버의 REST API를 호출합니다.
 
 - `search_chunks(query, top_k?, document_id?)`
 - `get_document(document_id)`
 - `list_documents(limit?, offset?, q?)`
 
-`MCP_SERVICE_TOKEN`이 설정되면 `X-Service-Token` 헤더로 인증하며, `/auth/login`의 JWT도 허용합니다.
+어댑터는 `/auth/login`으로 받은 JWT로 인증하며, 해당 사용자가 멤버인 워크스페이스만 검색합니다.
 
 ## 데이터 흐름 및 무결성
 

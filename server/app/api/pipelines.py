@@ -5,8 +5,8 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import select
 
-from app.api.deps import CurrentUser, DbDep, ServiceAdminDep, ServiceMemberDep
-from app.db.models import Pipeline, PipelineStatus, ServiceRole
+from app.api.deps import CurrentUser, DbDep, WorkspaceAdminDep, WorkspaceMemberDep
+from app.db.models import Pipeline, PipelineStatus, WorkspaceRole
 from app.pipeline.executor import run_pipeline
 from app.pipeline.preparation import check_readiness, prepare_pipeline
 from app.pipeline.registry import get_node_schema
@@ -122,44 +122,44 @@ def pipeline_node_models(_user: CurrentUser) -> dict:
     return _NODE_MODELS
 
 
-@router.get("/services/{service_id}/pipelines", response_model=list[PipelineOut])
-def list_pipelines(service_id: int, db: DbDep, membership: ServiceMemberDep) -> list[Pipeline]:
-    stmt = select(Pipeline).where(Pipeline.service_id == service_id)
-    if membership.role != ServiceRole.admin:
+@router.get("/workspaces/{workspace_id}/pipelines", response_model=list[PipelineOut])
+def list_pipelines(workspace_id: int, db: DbDep, membership: WorkspaceMemberDep) -> list[Pipeline]:
+    stmt = select(Pipeline).where(Pipeline.workspace_id == workspace_id)
+    if membership.role != WorkspaceRole.admin:
         stmt = stmt.where(Pipeline.status == PipelineStatus.active)
     return list(db.execute(stmt).scalars())
 
 
-@router.post("/services/{service_id}/pipelines", response_model=PipelineOut, status_code=status.HTTP_201_CREATED)
-def create_pipeline(service_id: int, payload: PipelineCreate, db: DbDep, _membership: ServiceAdminDep) -> Pipeline:
+@router.post("/workspaces/{workspace_id}/pipelines", response_model=PipelineOut, status_code=status.HTTP_201_CREATED)
+def create_pipeline(workspace_id: int, payload: PipelineCreate, db: DbDep, _membership: WorkspaceAdminDep) -> Pipeline:
     errors = validate_graph(payload.graph_json)
     if errors:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=errors)
-    pipeline = Pipeline(service_id=service_id, name=payload.name, graph_json=payload.graph_json)
+    pipeline = Pipeline(workspace_id=workspace_id, name=payload.name, graph_json=payload.graph_json)
     db.add(pipeline)
     db.commit()
     db.refresh(pipeline)
     return pipeline
 
 
-@router.get("/services/{service_id}/pipelines/{pipeline_id}", response_model=PipelineOut)
-def get_pipeline(service_id: int, pipeline_id: int, db: DbDep, _membership: ServiceMemberDep) -> Pipeline:
+@router.get("/workspaces/{workspace_id}/pipelines/{pipeline_id}", response_model=PipelineOut)
+def get_pipeline(workspace_id: int, pipeline_id: int, db: DbDep, _membership: WorkspaceMemberDep) -> Pipeline:
     pipeline = db.get(Pipeline, pipeline_id)
-    if not pipeline or pipeline.service_id != service_id:
+    if not pipeline or pipeline.workspace_id != workspace_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "pipeline not found")
     return pipeline
 
 
-@router.put("/services/{service_id}/pipelines/{pipeline_id}", response_model=PipelineOut)
+@router.put("/workspaces/{workspace_id}/pipelines/{pipeline_id}", response_model=PipelineOut)
 def update_pipeline(
-    service_id: int,
+    workspace_id: int,
     pipeline_id: int,
     payload: PipelineUpdate,
     db: DbDep,
-    _membership: ServiceAdminDep,
+    _membership: WorkspaceAdminDep,
 ) -> Pipeline:
     pipeline = db.get(Pipeline, pipeline_id)
-    if not pipeline or pipeline.service_id != service_id:
+    if not pipeline or pipeline.workspace_id != workspace_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "pipeline not found")
     if payload.graph_json is not None:
         errors = validate_graph(payload.graph_json)
@@ -173,25 +173,25 @@ def update_pipeline(
     return pipeline
 
 
-@router.delete("/services/{service_id}/pipelines/{pipeline_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_pipeline(service_id: int, pipeline_id: int, db: DbDep, _membership: ServiceAdminDep) -> None:
+@router.delete("/workspaces/{workspace_id}/pipelines/{pipeline_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_pipeline(workspace_id: int, pipeline_id: int, db: DbDep, _membership: WorkspaceAdminDep) -> None:
     pipeline = db.get(Pipeline, pipeline_id)
-    if not pipeline or pipeline.service_id != service_id:
+    if not pipeline or pipeline.workspace_id != workspace_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "pipeline not found")
     db.delete(pipeline)
     db.commit()
 
 
-@router.patch("/services/{service_id}/pipelines/{pipeline_id}/status", response_model=PipelineOut)
+@router.patch("/workspaces/{workspace_id}/pipelines/{pipeline_id}/status", response_model=PipelineOut)
 def update_pipeline_status(
-    service_id: int,
+    workspace_id: int,
     pipeline_id: int,
     payload: PipelineStatusUpdate,
     db: DbDep,
-    _membership: ServiceAdminDep,
+    _membership: WorkspaceAdminDep,
 ) -> Pipeline:
     pipeline = db.get(Pipeline, pipeline_id)
-    if not pipeline or pipeline.service_id != service_id:
+    if not pipeline or pipeline.workspace_id != workspace_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "pipeline not found")
     if payload.status == PipelineStatus.archived and pipeline.status == PipelineStatus.archived:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "pipeline is already archived")
@@ -205,18 +205,18 @@ def update_pipeline_status(
     return pipeline
 
 
-@router.get("/services/{service_id}/pipelines/{pipeline_id}/readiness")
-def pipeline_readiness(service_id: int, pipeline_id: int, db: DbDep, _membership: ServiceMemberDep) -> dict:
+@router.get("/workspaces/{workspace_id}/pipelines/{pipeline_id}/readiness")
+def pipeline_readiness(workspace_id: int, pipeline_id: int, db: DbDep, _membership: WorkspaceMemberDep) -> dict:
     pipeline = db.get(Pipeline, pipeline_id)
-    if not pipeline or pipeline.service_id != service_id:
+    if not pipeline or pipeline.workspace_id != workspace_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "pipeline not found")
     return check_readiness(pipeline.graph_json)
 
 
-@router.post("/services/{service_id}/pipelines/{pipeline_id}/prepare")
-def prepare_pipeline_endpoint(service_id: int, pipeline_id: int, db: DbDep, _membership: ServiceMemberDep) -> dict:
+@router.post("/workspaces/{workspace_id}/pipelines/{pipeline_id}/prepare")
+def prepare_pipeline_endpoint(workspace_id: int, pipeline_id: int, db: DbDep, _membership: WorkspaceMemberDep) -> dict:
     pipeline = db.get(Pipeline, pipeline_id)
-    if not pipeline or pipeline.service_id != service_id:
+    if not pipeline or pipeline.workspace_id != workspace_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "pipeline not found")
     try:
         prepare_pipeline(pipeline.graph_json)
@@ -225,16 +225,16 @@ def prepare_pipeline_endpoint(service_id: int, pipeline_id: int, db: DbDep, _mem
     return {"ready": True}
 
 
-@router.post("/services/{service_id}/pipelines/{pipeline_id}/run", response_model=PipelineRunResponse)
+@router.post("/workspaces/{workspace_id}/pipelines/{pipeline_id}/run", response_model=PipelineRunResponse)
 def run_pipeline_endpoint(
-    service_id: int,
+    workspace_id: int,
     pipeline_id: int,
     payload: PipelineRunRequest,
     db: DbDep,
-    _membership: ServiceMemberDep,
+    _membership: WorkspaceMemberDep,
 ) -> PipelineRunResponse:
     pipeline = db.get(Pipeline, pipeline_id)
-    if not pipeline or pipeline.service_id != service_id:
+    if not pipeline or pipeline.workspace_id != workspace_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "pipeline not found")
 
     errors = validate_graph(pipeline.graph_json)
@@ -243,7 +243,7 @@ def run_pipeline_endpoint(
 
     ctx = ExecutionContext(
         db=db,
-        service_id=service_id,
+        workspace_id=workspace_id,
         run_inputs={"query": payload.query, "top_k": payload.top_k},
     )
     try:

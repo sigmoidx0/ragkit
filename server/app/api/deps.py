@@ -1,31 +1,29 @@
 """Auth: Bearer JWT in Authorization header (no OAuth2 password flow).
 
 Public interface (import these):
-    is_superadmin   — utility: check superadmin status directly
-    DbDep           — SQLAlchemy session
-    CurrentUser     — authenticated user (JWT)
-    ServiceOrUser   — authenticated user or MCP service token (returns None for service)
-    ServiceMemberDep  — membership of current user in the requested service
-    ServiceWriterDep  — member or admin (viewers blocked)
-    ServiceAdminDep   — service admin only
-    SuperAdminDep     — superadmin only
-
-Internal (FastAPI DI callables, not for direct use):
-    _parse_bearer, _get_bearer_token, _get_current_user,
-    _get_service_or_user, _get_service_membership,
-    _require_service_writer, _require_service_admin, _require_superadmin
+    is_superadmin       — utility: check superadmin status directly
+    DbDep               — SQLAlchemy session
+    CurrentUser         — authenticated user (JWT)
+    UserOrMcpToken      — authenticated user, or None for the MCP adapter's shared token
+    WorkspaceMemberDep  — current user's membership in the path's `workspace_id`
+    WorkspaceWriterDep  — member or admin (viewers blocked)
+    WorkspaceAdminDep   — workspace admin only
+    AgentMemberDep      — the path's `agent_id`, plus the user's membership in its workspace
+    AgentAdminDep       — the same, admin only
+    SuperAdminDep       — superadmin only
 """
 
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import ServiceMembership, ServiceRole, SuperAdmin, User
+from app.db.models import Agent, SuperAdmin, User, WorkspaceMembership, WorkspaceRole
 from app.db.session import get_db
 from app.security.tokens import decode_token
 
@@ -80,7 +78,7 @@ def _get_current_user(db: DbDep, token: _BearerDep) -> User:
 CurrentUser = Annotated[User, Depends(_get_current_user)]
 
 
-def _get_service_or_user(
+def _get_user_or_mcp_token(
     db: DbDep,
     authorization: Annotated[str | None, Header(alias="Authorization")] = None,
     x_service_token: Annotated[str | None, Header(alias="X-Service-Token")] = None,
@@ -104,40 +102,73 @@ def _get_service_or_user(
     return user
 
 
-ServiceOrUser = Annotated[User | None, Depends(_get_service_or_user)]
+UserOrMcpToken = Annotated[User | None, Depends(_get_user_or_mcp_token)]
 
 
-def _get_service_membership(
-    service_id: int,
-    user: CurrentUser,
-    db: DbDep,
-) -> ServiceMembership:
-    if is_superadmin(db, user.id):
-        return ServiceMembership(user_id=user.id, service_id=service_id, role=ServiceRole.admin)
-    membership = db.execute(
-        select(ServiceMembership).where(
-            ServiceMembership.user_id == user.id,
-            ServiceMembership.service_id == service_id,
+def membership_for(db: Session, user_id: int, workspace_id: int) -> WorkspaceMembership | None:
+    """The user's membership in a workspace; superadmins are admins everywhere."""
+    if is_superadmin(db, user_id):
+        return WorkspaceMembership(user_id=user_id, workspace_id=workspace_id, role=WorkspaceRole.admin)
+    return db.execute(
+        select(WorkspaceMembership).where(
+            WorkspaceMembership.user_id == user_id,
+            WorkspaceMembership.workspace_id == workspace_id,
         )
     ).scalar_one_or_none()
+
+
+def _get_workspace_membership(workspace_id: int, user: CurrentUser, db: DbDep) -> WorkspaceMembership:
+    membership = membership_for(db, user.id, workspace_id)
     if not membership:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "not a member of this service")
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "not a member of this workspace")
     return membership
 
 
-ServiceMemberDep = Annotated[ServiceMembership, Depends(_get_service_membership)]
+WorkspaceMemberDep = Annotated[WorkspaceMembership, Depends(_get_workspace_membership)]
 
 
-def _require_service_writer(membership: ServiceMemberDep) -> ServiceMembership:
-    if membership.role == ServiceRole.viewer:
+def _require_workspace_writer(membership: WorkspaceMemberDep) -> WorkspaceMembership:
+    if membership.role == WorkspaceRole.viewer:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "viewers cannot write")
     return membership
 
 
-def _require_service_admin(membership: ServiceMemberDep) -> ServiceMembership:
-    if membership.role != ServiceRole.admin:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "service admin only")
+def _require_workspace_admin(membership: WorkspaceMemberDep) -> WorkspaceMembership:
+    if membership.role != WorkspaceRole.admin:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "workspace admin only")
     return membership
+
+
+@dataclass
+class AgentAccess:
+    """An agent, and the caller's standing in the workspace that owns it."""
+
+    agent: Agent
+    membership: WorkspaceMembership
+
+    @property
+    def user_id(self) -> int:
+        return self.membership.user_id
+
+
+def _get_agent_access(agent_id: int, user: CurrentUser, db: DbDep) -> AgentAccess:
+    agent = db.get(Agent, agent_id)
+    if not agent:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "agent not found")
+    membership = membership_for(db, user.id, agent.workspace_id)
+    if not membership:
+        # Same answer as a missing agent: don't reveal agents in other workspaces.
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "agent not found")
+    return AgentAccess(agent, membership)
+
+
+AgentMemberDep = Annotated[AgentAccess, Depends(_get_agent_access)]
+
+
+def _require_agent_admin(access: AgentMemberDep) -> AgentAccess:
+    if access.membership.role != WorkspaceRole.admin:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "workspace admin only")
+    return access
 
 
 def _require_superadmin(user: CurrentUser, db: DbDep) -> User:
@@ -148,6 +179,7 @@ def _require_superadmin(user: CurrentUser, db: DbDep) -> User:
 
 # ── Public type aliases ──────────────────────────────────────────────────────
 
-ServiceWriterDep = Annotated[ServiceMembership, Depends(_require_service_writer)]
-ServiceAdminDep = Annotated[ServiceMembership, Depends(_require_service_admin)]
+WorkspaceWriterDep = Annotated[WorkspaceMembership, Depends(_require_workspace_writer)]
+WorkspaceAdminDep = Annotated[WorkspaceMembership, Depends(_require_workspace_admin)]
+AgentAdminDep = Annotated[AgentAccess, Depends(_require_agent_admin)]
 SuperAdminDep = Annotated[User, Depends(_require_superadmin)]

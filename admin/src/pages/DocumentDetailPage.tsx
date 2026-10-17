@@ -6,7 +6,7 @@ import { DocumentsApi } from "@/api/endpoints";
 import { Badge, Button, Card, CardHeader, FormField, Input, SectionHeading, Textarea, formatBytes } from "@/components/ui";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { MarkdownPreview } from "@/components/MarkdownPreview";
-import { useService } from "@/services/ServiceProvider";
+import { useWorkspace } from "@/workspace/WorkspaceProvider";
 import { statusTone } from "@/lib/documentStatus";
 
 export default function DocumentDetailPage() {
@@ -14,12 +14,12 @@ export default function DocumentDetailPage() {
   const id = Number(params.id);
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const { current: service } = useService();
+  const { workspace } = useWorkspace();
 
   const { data, isLoading } = useQuery({
-    queryKey: ["document", service?.id, id],
-    queryFn: () => DocumentsApi.get(service!.id, id),
-    enabled: Number.isFinite(id) && service != null,
+    queryKey: ["document", workspace?.id, id],
+    queryFn: () => DocumentsApi.get(workspace!.id, id),
+    enabled: Number.isFinite(id) && workspace != null,
   });
 
   const [showPreview, setShowPreview] = useState(false);
@@ -38,9 +38,9 @@ export default function DocumentDetailPage() {
   }, [data]);
 
   useEffect(() => {
-    if (!showPreview || !service) return;
+    if (!showPreview || !workspace) return;
     let cancelled = false;
-    void DocumentsApi.fetchFile(service.id, id).then(({ blob }) => {
+    void DocumentsApi.fetchFile(workspace.id, id).then(({ blob }) => {
       if (cancelled) return;
       setPreviewBlobUrl(URL.createObjectURL(blob));
     });
@@ -51,11 +51,11 @@ export default function DocumentDetailPage() {
         return null;
       });
     };
-  }, [showPreview, service?.id, id]);
+  }, [showPreview, workspace?.id, id]);
 
   const handleDownload = async () => {
-    if (!service) return;
-    const { blob, filename } = await DocumentsApi.fetchFile(service.id, id);
+    if (!workspace) return;
+    const { blob, filename } = await DocumentsApi.fetchFile(workspace.id, id);
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -65,13 +65,13 @@ export default function DocumentDetailPage() {
   };
 
   const markdownQuery = useQuery({
-    queryKey: ["document-markdown", service?.id, id],
-    queryFn: () => DocumentsApi.previewText(service!.id, id),
-    enabled: showMarkdown && service != null && Number.isFinite(id),
+    queryKey: ["document-markdown", workspace?.id, id],
+    queryFn: () => DocumentsApi.previewText(workspace!.id, id),
+    enabled: showMarkdown && workspace != null && Number.isFinite(id),
   });
 
   const deleteDoc = useMutation({
-    mutationFn: () => DocumentsApi.remove(service!.id, id),
+    mutationFn: () => DocumentsApi.remove(workspace!.id, id),
     onSuccess: () => {
       toast.success("Document deleted");
       navigate("/documents");
@@ -81,12 +81,12 @@ export default function DocumentDetailPage() {
 
   const updateMeta = useMutation({
     mutationFn: () =>
-      DocumentsApi.update(service!.id, id, {
+      DocumentsApi.update(workspace!.id, id, {
         title: editTitle || undefined,
         description: editDescription || undefined,
       }),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["document", service?.id, id] });
+      void qc.invalidateQueries({ queryKey: ["document", workspace?.id, id] });
       toast.success("Saved");
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Save failed"),

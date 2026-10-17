@@ -10,20 +10,23 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.agent.checkpoint import checkpointer_lifespan
 from app.api import (
-    agent_config,
+    agents,
     auth,
     chat,
+    document_sets,
     documents,
     evals,
     feedback,
     health,
     ingest,
+    legacy,
+    mcp_servers,
     pipelines,
     search,
-    services,
     sessions,
     system_prompts,
     users,
+    workspaces,
 )
 from app.core.config import get_settings
 from app.core.logging import configure_logging
@@ -79,8 +82,9 @@ def create_app() -> FastAPI:
     )
     app.include_router(health.router)
     app.include_router(auth.router)
-    app.include_router(services.router)
-    app.include_router(agent_config.router)
+    app.include_router(workspaces.router)
+    app.include_router(agents.router)
+    app.include_router(document_sets.router)
     app.include_router(evals.router)
     app.include_router(feedback.router)
     app.include_router(documents.router)
@@ -91,6 +95,8 @@ def create_app() -> FastAPI:
     app.include_router(system_prompts.router)
     app.include_router(chat.router)
     app.include_router(sessions.router)
+    app.include_router(mcp_servers.router)
+    app.include_router(legacy.router)
     return app
 
 

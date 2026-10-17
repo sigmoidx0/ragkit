@@ -9,6 +9,8 @@ class SearchRequest(BaseModel):
     query: str = Field(min_length=1, max_length=4000)
     top_k: int | None = Field(default=None, ge=1, le=200)
     document_id: int | None = None
+    # Limit to documents in these sets — try an agent's retrieval scope.
+    document_set_ids: list[int] | None = None
     pipeline_id: int | None = None
 
 

@@ -9,16 +9,18 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 
 from app.agent.checkpoint import get_checkpointer
-from app.agent.executor import session_agent_stream
-from app.agent.history import question_and_answer, session_turns
-from app.api.deps import CurrentUser, DbDep, ServiceMemberDep
+from app.agent.executor import pending_calls, session_agent_stream, session_resume_stream
+from app.agent.history import question_and_answer, session_turns, title_from_message
+from app.api.deps import AgentMemberDep, CurrentUser, DbDep
 from app.core.config import get_settings
-from app.db.models import ChatSession, ChatTurnSources, MessageFeedback
+from app.db.models import ChatSession, ChatTurnSources, McpToolCall, MessageFeedback
 from app.schemas.chat import (
+    ApprovalDecisionRequest,
     ChatSessionCreate,
     ChatSessionResponse,
     FeedbackIn,
     FeedbackOut,
+    PendingApprovalOut,
     SessionChatRequest,
     SessionMessageResponse,
     SourceItem,
@@ -27,12 +29,12 @@ from app.schemas.chat import (
 router = APIRouter(tags=["sessions"])
 
 
-def _get_session_or_404(db: DbDep, session_id: int, user_id: int, service_id: int) -> ChatSession:
+def _get_session_or_404(db: DbDep, session_id: int, user_id: int, agent_id: int) -> ChatSession:
     session = db.execute(
         select(ChatSession).where(
             ChatSession.id == session_id,
             ChatSession.user_id == user_id,
-            ChatSession.service_id == service_id,
+            ChatSession.agent_id == agent_id,
         )
     ).scalar_one_or_none()
     if not session:
@@ -42,48 +44,48 @@ def _get_session_or_404(db: DbDep, session_id: int, user_id: int, service_id: in
 
 # ── Session CRUD ─────────────────────────────────────────────────────────────
 
-@router.post("/services/{service_id}/sessions", response_model=ChatSessionResponse, status_code=201)
+@router.post("/agents/{agent_id}/sessions", response_model=ChatSessionResponse, status_code=201)
 def create_session(
-    service_id: int,
+    agent_id: int,
     body: ChatSessionCreate,
-    _membership: ServiceMemberDep,
+    _membership: AgentMemberDep,
     user: CurrentUser,
     db: DbDep,
 ) -> ChatSession:
-    session = ChatSession(user_id=user.id, service_id=service_id, title=body.title)
+    session = ChatSession(user_id=user.id, agent_id=agent_id, title=body.title)
     db.add(session)
     db.commit()
     db.refresh(session)
     return session
 
 
-@router.get("/services/{service_id}/sessions", response_model=list[ChatSessionResponse])
+@router.get("/agents/{agent_id}/sessions", response_model=list[ChatSessionResponse])
 def list_sessions(
-    service_id: int,
-    _membership: ServiceMemberDep,
+    agent_id: int,
+    _membership: AgentMemberDep,
     user: CurrentUser,
     db: DbDep,
 ) -> list[ChatSession]:
     rows = db.execute(
         select(ChatSession)
-        .where(ChatSession.user_id == user.id, ChatSession.service_id == service_id)
+        .where(ChatSession.user_id == user.id, ChatSession.agent_id == agent_id)
         .order_by(ChatSession.updated_at.desc())
     ).scalars().all()
     return list(rows)
 
 
 @router.get(
-    "/services/{service_id}/sessions/{session_id}/messages",
+    "/agents/{agent_id}/sessions/{session_id}/messages",
     response_model=list[SessionMessageResponse],
 )
 async def list_messages(
-    service_id: int,
+    agent_id: int,
     session_id: int,
-    _membership: ServiceMemberDep,
+    _membership: AgentMemberDep,
     user: CurrentUser,
     db: DbDep,
 ) -> list[SessionMessageResponse]:
-    _get_session_or_404(db, session_id, user.id, service_id)
+    _get_session_or_404(db, session_id, user.id, agent_id)
     cp_tuple = await get_checkpointer().aget_tuple(
         {"configurable": {"thread_id": str(session_id)}}
     )
@@ -119,20 +121,20 @@ async def list_messages(
 # ── Feedback ──────────────────────────────────────────────────────────────────
 
 @router.put(
-    "/services/{service_id}/sessions/{session_id}/turns/{turn_index}/feedback",
+    "/agents/{agent_id}/sessions/{session_id}/turns/{turn_index}/feedback",
     response_model=FeedbackOut,
 )
 async def rate_answer(
-    service_id: int,
+    agent_id: int,
     session_id: int,
     turn_index: int,
     body: FeedbackIn,
-    _membership: ServiceMemberDep,
+    _membership: AgentMemberDep,
     user: CurrentUser,
     db: DbDep,
 ) -> FeedbackOut:
     """Rate one answer. Rating again replaces the earlier rating."""
-    _get_session_or_404(db, session_id, user.id, service_id)
+    _get_session_or_404(db, session_id, user.id, agent_id)
     cp_tuple = await get_checkpointer().aget_tuple({"configurable": {"thread_id": str(session_id)}})
     lc_msgs = cp_tuple.checkpoint.get("channel_values", {}).get("messages", []) if cp_tuple else []
     # The question/answer text comes from the stored history, not the client,
@@ -149,7 +151,7 @@ async def rate_answer(
     ).scalar_one_or_none()
     if feedback is None:
         feedback = MessageFeedback(
-            service_id=service_id, session_id=session_id, user_id=user.id, turn_index=turn_index
+            agent_id=agent_id, session_id=session_id, user_id=user.id, turn_index=turn_index
         )
         db.add(feedback)
     feedback.rating = body.rating
@@ -160,18 +162,18 @@ async def rate_answer(
 
 
 @router.delete(
-    "/services/{service_id}/sessions/{session_id}/turns/{turn_index}/feedback",
+    "/agents/{agent_id}/sessions/{session_id}/turns/{turn_index}/feedback",
     status_code=204,
 )
 def clear_rating(
-    service_id: int,
+    agent_id: int,
     session_id: int,
     turn_index: int,
-    _membership: ServiceMemberDep,
+    _membership: AgentMemberDep,
     user: CurrentUser,
     db: DbDep,
 ) -> None:
-    _get_session_or_404(db, session_id, user.id, service_id)
+    _get_session_or_404(db, session_id, user.id, agent_id)
     feedback = db.execute(
         select(MessageFeedback).where(
             MessageFeedback.session_id == session_id, MessageFeedback.turn_index == turn_index
@@ -182,15 +184,15 @@ def clear_rating(
         db.commit()
 
 
-@router.delete("/services/{service_id}/sessions/{session_id}", status_code=204)
+@router.delete("/agents/{agent_id}/sessions/{session_id}", status_code=204)
 async def delete_session(
-    service_id: int,
+    agent_id: int,
     session_id: int,
-    _membership: ServiceMemberDep,
+    _membership: AgentMemberDep,
     user: CurrentUser,
     db: DbDep,
 ) -> None:
-    session = _get_session_or_404(db, session_id, user.id, service_id)
+    session = _get_session_or_404(db, session_id, user.id, agent_id)
     # Through the saver's own API: its tables differ by backend (SQLite has
     # `writes`, Postgres has `checkpoint_writes` + `checkpoint_blobs`), and
     # naming them here broke deletion on Postgres.
@@ -201,29 +203,80 @@ async def delete_session(
 
 # ── Stateful chat ─────────────────────────────────────────────────────────────
 
-@router.post("/services/{service_id}/sessions/{session_id}/chat")
+@router.post("/agents/{agent_id}/sessions/{session_id}/chat")
 async def session_chat(
-    service_id: int,
+    agent_id: int,
     session_id: int,
     body: SessionChatRequest,
-    _membership: ServiceMemberDep,
+    _membership: AgentMemberDep,
     user: CurrentUser,
     db: DbDep,
 ) -> StreamingResponse:
     if not get_settings().chat.enabled:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "chat is disabled")
 
-    session = _get_session_or_404(db, session_id, user.id, service_id)
+    session = _get_session_or_404(db, session_id, user.id, agent_id)
+    if body.replace_turn is None and pending_calls(db, session_id):
+        # The run is paused mid-turn; a new message would leave it hanging.
+        raise HTTPException(status.HTTP_409_CONFLICT, "approve or reject the pending action first")
     session.updated_at = datetime.now(UTC)
+    if not session.title:
+        # Named after its first question, so the session list reads as topics
+        # rather than a column of timestamps. A title set explicitly is kept.
+        session.title = title_from_message(body.message)
     db.commit()
 
     return StreamingResponse(
         session_agent_stream(
-            db, service_id, str(session_id), body.message, body.top_k, body.retrieval_mode, user_id=user.id
+            db,
+            agent_id,
+            str(session_id),
+            body.message,
+            body.top_k,
+            body.retrieval_mode,
+            user_id=user.id,
+            replace_turn=body.replace_turn,
+            regenerate=body.regenerate,
         ),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
             "X-Accel-Buffering": "no",
         },
+    )
+
+
+# ── MCP approvals ─────────────────────────────────────────────────────────────
+
+@router.get("/agents/{agent_id}/sessions/{session_id}/approvals", response_model=list[PendingApprovalOut])
+def list_pending_approvals(
+    agent_id: int, session_id: int, _membership: AgentMemberDep, user: CurrentUser, db: DbDep
+) -> list[McpToolCall]:
+    """Calls this session's paused run waits on — shown again when the session is reopened."""
+    _get_session_or_404(db, session_id, user.id, agent_id)
+    return pending_calls(db, session_id)
+
+
+@router.post("/agents/{agent_id}/sessions/{session_id}/approvals")
+async def decide_approvals(
+    agent_id: int,
+    session_id: int,
+    body: ApprovalDecisionRequest,
+    _membership: AgentMemberDep,
+    user: CurrentUser,
+    db: DbDep,
+) -> StreamingResponse:
+    """Approve or reject pending calls, and stream the rest of the paused turn."""
+    _get_session_or_404(db, session_id, user.id, agent_id)
+    pending = {c.id: c for c in pending_calls(db, session_id)}
+    decisions = []
+    for d in body.decisions:
+        call = pending.get(d.call_id)
+        if call is None:
+            raise HTTPException(status.HTTP_409_CONFLICT, f"call {d.call_id} is not waiting for approval")
+        decisions.append((call, d.approve, d.args if d.approve else None))
+    return StreamingResponse(
+        session_resume_stream(db, agent_id, str(session_id), decisions, user.id),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

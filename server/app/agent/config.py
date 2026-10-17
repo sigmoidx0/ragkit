@@ -20,7 +20,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import LlmSection, get_settings
-from app.db.models import Pipeline, PipelineStatus, Service, SystemPrompt
+from app.db.models import (
+    Agent,
+    DocumentSet,
+    DocumentSetDocument,
+    Pipeline,
+    PipelineStatus,
+    SystemPrompt,
+)
 from app.schemas.agent_config import AgentConfig
 
 logger = logging.getLogger(__name__)
@@ -43,14 +50,14 @@ SUGGESTED_MODELS: dict[str, list[str]] = {
 }
 
 
-def load_agent_config(service: Service | None) -> AgentConfig:
-    return AgentConfig.from_stored(service.agent_config if service else None)
+def load_agent_config(agent: Agent | None) -> AgentConfig:
+    return AgentConfig.from_stored(agent.agent_config if agent else None)
 
 
-def load_system_prompt(db: Session, service_id: int) -> str:
+def load_system_prompt(db: Session, agent_id: int) -> str:
     """The agent's active system prompt, or the config.yaml fallback."""
     row = db.execute(
-        select(SystemPrompt).where(SystemPrompt.service_id == service_id, SystemPrompt.is_active.is_(True))
+        select(SystemPrompt).where(SystemPrompt.agent_id == agent_id, SystemPrompt.is_active.is_(True))
     ).scalar_one_or_none()
     return row.content if row else get_settings().chat.fallback_system_prompt
 
@@ -85,16 +92,44 @@ def resolve_llm(agent_cfg: AgentConfig) -> LlmSection:
     return base.model_copy(update=update)
 
 
-def resolve_pipeline_graph(db: Session, service_id: int, agent_cfg: AgentConfig) -> dict | None:
+def documents_in_sets(db: Session, workspace_id: int, set_ids: list[int] | None) -> list[int] | None:
+    """Documents in the given sets of a workspace — the retrieval scope they imply.
+
+    None or no sets means no filter (None) — for ad-hoc search; agents go
+    through resolve_document_scope. Sets that are empty,
+    or no longer exist, give [] — nothing in scope — rather than everything.
+    """
+    if not set_ids:
+        return None
+    return list(
+        db.execute(
+            select(DocumentSetDocument.document_id)
+            .join(DocumentSet, DocumentSet.id == DocumentSetDocument.document_set_id)
+            .where(DocumentSet.workspace_id == workspace_id, DocumentSet.id.in_(set_ids))
+            .distinct()
+        ).scalars()
+    )
+
+
+def resolve_document_scope(db: Session, workspace_id: int, agent_cfg: AgentConfig) -> list[int]:
+    """Documents the agent may search: those in its selected document sets.
+
+    Unlike an ad-hoc search, an agent with no sets searches nothing — its
+    knowledge is exactly what was given to it, never the whole workspace by default.
+    """
+    return documents_in_sets(db, workspace_id, agent_cfg.document_set_ids) or []
+
+
+def resolve_pipeline_graph(db: Session, workspace_id: int, agent_cfg: AgentConfig) -> dict | None:
     """Return the graph of the agent's pipeline, or None for the built-in chain."""
     if agent_cfg.pipeline_id is None:
         return None
     pipeline = db.get(Pipeline, agent_cfg.pipeline_id)
-    if not pipeline or pipeline.service_id != service_id or pipeline.status != PipelineStatus.active:
+    if not pipeline or pipeline.workspace_id != workspace_id or pipeline.status != PipelineStatus.active:
         # Archiving a pipeline must not break chat — fall back and say so in the log.
         logger.warning(
-            "agent %d points at pipeline %s, which is missing or not active; using built-in search",
-            service_id,
+            "workspace %d: agent pipeline %s is missing or not active; using built-in search",
+            workspace_id,
             agent_cfg.pipeline_id,
         )
         return None

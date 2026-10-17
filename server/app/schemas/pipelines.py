@@ -26,7 +26,7 @@ class PipelineOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    service_id: int
+    workspace_id: int
     name: str
     status: PipelineStatus
     graph_json: dict[str, Any]

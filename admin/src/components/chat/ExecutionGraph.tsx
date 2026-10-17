@@ -24,6 +24,10 @@ const KIND_ACCENT: Record<GraphNode["kind"], string> = {
   supervisor: "border-amber-300 dark:border-amber-700",
   agent: "border-teal-300 dark:border-teal-700",
   delegate: "border-rose-300 dark:border-rose-700",
+  // An MCP server: external tools, some of which wait for the user's approval.
+  mcp: "border-violet-300 dark:border-violet-700",
+  // Machinery that runs every turn (history compression, query rewrite).
+  step: "border-gray-300 border-dashed dark:border-gray-600",
 };
 
 const VISUAL_CLS: Record<NodeVisual, string> = {
@@ -44,13 +48,15 @@ function GraphNodeBox({ data }: NodeProps) {
   const { label, kind, visual, inner } = data as NodeData;
   const isSentinel = kind === "entry" || kind === "exit";
   const isDelegate = kind === "delegate";
+  const isMcp = kind === "mcp";
 
   return (
     <div
       className={cn(
         "select-none border px-3 py-2 text-center text-[13px] font-medium capitalize transition-colors",
         isSentinel ? "rounded-full px-4" : "rounded-lg",
-        isDelegate && "min-w-[140px] border-dashed",
+        (isDelegate || isMcp) && "min-w-[140px] border-dashed",
+        isMcp && "normal-case",
         KIND_ACCENT[kind],
         VISUAL_CLS[visual],
       )}
@@ -59,6 +65,9 @@ function GraphNodeBox({ data }: NodeProps) {
       <Handle type="target" position={Position.Top} className="!opacity-0" />
       {isDelegate && (
         <span className="block text-[9px] font-semibold uppercase tracking-wider opacity-60">agent · tool</span>
+      )}
+      {isMcp && (
+        <span className="block text-[9px] font-semibold uppercase tracking-wider opacity-60">mcp · tools</span>
       )}
       {label}
       {/* A delegate is a whole agent of its own: show its graph's progress
@@ -123,9 +132,11 @@ function layoutNodes(nodes: GraphNode[], edges: GraphEdge[]): Map<string, { x: n
   }
 
   const delegates = nodes.filter((n) => n.kind === "delegate");
-  if (delegates.length) {
+  // Delegates and MCP servers are tools: one row below the agents that call them.
+  const toolNodes = nodes.filter((n) => n.kind === "delegate" || n.kind === "mcp");
+  if (toolNodes.length) {
     const callerDepth = Math.max(0, ...edges.filter((e) => e.tool).map((e) => depth.get(e.source) ?? 0));
-    for (const d of delegates) depth.set(d.id, callerDepth + 1);
+    for (const d of toolNodes) depth.set(d.id, callerDepth + 1);
     for (const n of nodes) if (n.kind === "exit") depth.set(n.id, callerDepth + 2);
   }
 
